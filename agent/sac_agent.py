@@ -45,6 +45,7 @@ class SACAgent:
         if np.any(np.isnan(state)):
             return np.array([0.0]), hidden_state
 
+        # (1, 1, 5)
         state_t = torch.FloatTensor(state).unsqueeze(0).unsqueeze(0).to(self.device)
         mu, log_std, next_hidden = self.actor(state_t, hidden_state)
         
@@ -54,7 +55,8 @@ class SACAgent:
         std = log_std.exp()
         dist = torch.distributions.Normal(mu, std)
         action = torch.tanh(dist.rsample())
-        return action.detach().cpu().numpy()[0], next_hidden
+        
+        return action.detach().cpu().numpy().flatten(), next_hidden
 
     def update(self, replay_buffer, batch_size=256):
         if len(replay_buffer) < batch_size:
@@ -62,22 +64,24 @@ class SACAgent:
 
         states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
         
-        s = torch.FloatTensor(states).unsqueeze(1).to(self.device)
-        a = torch.FloatTensor(actions).unsqueeze(1).to(self.device) 
-        r = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
-        ns = torch.FloatTensor(next_states).unsqueeze(1).to(self.device)
-        d = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
+        s = torch.FloatTensor(states).unsqueeze(1).to(self.device)        # (B, 1, 5)
+        a = torch.FloatTensor(actions).view(batch_size, 1, 1).to(self.device) # (B, 1, 1)
+        r = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)       # (B, 1)
+        ns = torch.FloatTensor(next_states).unsqueeze(1).to(self.device)  # (B, 1, 5)
+        d = torch.FloatTensor(dones).unsqueeze(1).to(self.device)         # (B, 1)
+
 
         with torch.no_grad():
             next_mu, next_log_std, _ = self.actor(ns)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mu, next_std)
-
-            next_actions_raw = next_dist.rsample()
-            next_actions = torch.tanh(next_actions_raw).unsqueeze(1)
             
-            q1_t, _ = self.critic_1_target(ns, next_actions)
-            q2_t, _ = self.critic_2_target(ns, next_actions)
+            next_actions_raw = next_dist.rsample()
+            
+            next_actions_3d = torch.tanh(next_actions_raw).unsqueeze(1)
+            
+            q1_t, _ = self.critic_1_target(ns, next_actions_3d)
+            q2_t, _ = self.critic_2_target(ns, next_actions_3d)
             
             log_prob_next = next_dist.log_prob(next_actions_raw).sum(-1, keepdim=True)
             target_v = torch.min(q1_t, q2_t) - self.alpha * log_prob_next
@@ -101,10 +105,11 @@ class SACAgent:
         dist = torch.distributions.Normal(mu, std)
         
         curr_a_raw = dist.rsample()
-        curr_a = torch.tanh(curr_a_raw).unsqueeze(1)
         
-        q1, _ = self.critic_1(s, curr_a)
-        q2, _ = self.critic_2(s, curr_a)
+        curr_a_3d = torch.tanh(curr_a_raw).unsqueeze(1)
+        
+        q1, _ = self.critic_1(s, curr_a_3d)
+        q2, _ = self.critic_2(s, curr_a_3d)
         min_q = torch.min(q1, q2)
         
         log_prob = dist.log_prob(curr_a_raw).sum(-1, keepdim=True)

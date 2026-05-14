@@ -8,12 +8,8 @@ from env.demand import DemandGenerator
 from scripts.dashboard import ReactorDashboard
 
 def main():
-    # Each step simulates 60 seconds of reactor physics via RK4.
-    env = NormanReactorEnv(dt=10.0)  # I changed from 60 to 10 seconds for better stability with stiff ODEs. The agent will learn to control the reactor every 10 seconds, which is still a reasonable timescale for control actions in a nuclear reactor.
-    
-    # Observation: [Flux, Iodine, Xenon, Power, Target]
+    env = NormanReactorEnv(dt=10.0) 
     agent = SACAgent(state_dim=5, action_dim=1)
-    
     memory = ReplayBuffer(capacity=100000)
     
     demand_gen = DemandGenerator()
@@ -22,11 +18,8 @@ def main():
     batch_size = 256
     episodes = 2000
     
-    print(f"--- Norman_The_Machine ---")
     print(f"Status: Training Ground Ready")
     print(f"Device: {agent.device}")
-    print(f"Hardware: Utilizing i9-14900HX High-Performance Cores")
-    print(f"--------------------------")
 
     if not os.path.exists("data"):
         os.makedirs("data")
@@ -35,15 +28,14 @@ def main():
         state, _ = env.reset()
         episode_reward = 0
         done = False
-        hidden_state = None
+        hidden_state = None  
         
         step = 0
         while not done:
             target_power = demand_gen.get_target(step)
-            env.target_power = target_power
+            env.target_power = target_power 
             
             action, hidden_state = agent.select_action(state, hidden_state)
-            
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
             
@@ -51,17 +43,20 @@ def main():
             
             if len(memory) > batch_size:
                 agent.update(memory, batch_size)
-            
+     
             if step % 5 == 0:
                 dashboard.update(step, env.engine.get_state(), target_power, action)
+
+            if step % 100 == 0 and step > 0:
+                print(f"   ... Ep {ep} | Step {step}/1440 | Current Reward: {episode_reward:.2f}")
                 
             state = next_state
             episode_reward += reward
             step += 1
             
-        if ep % 10 == 0:
-            print(f"Episode {ep} | Reward: {episode_reward:.2f} | Buffer: {len(memory)}")
-            torch.save(agent.actor.state_dict(), "data/norman_actor_latest.pth")
+
+        print(f"Episode {ep} Complete | Final Reward: {episode_reward:.2f} | Memory: {len(memory)}")
+        torch.save(agent.actor.state_dict(), f"data/norman_actor_latest.pth")
 
 if __name__ == "__main__":
     main()
