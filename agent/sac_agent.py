@@ -28,28 +28,23 @@ class SACAgent:
         self.alpha = alpha 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Actor and Twin Critics
         self.actor = Actor(state_dim, action_dim).to(self.device)
         self.critic_1 = Critic(state_dim, action_dim).to(self.device)
         self.critic_2 = Critic(state_dim, action_dim).to(self.device)
         
-        # Target Networks for stability
         self.critic_1_target = Critic(state_dim, action_dim).to(self.device)
         self.critic_2_target = Critic(state_dim, action_dim).to(self.device)
         self.critic_1_target.load_state_dict(self.critic_1.state_dict())
         self.critic_2_target.load_state_dict(self.critic_2.state_dict())
 
-        # Optimizers
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_1_opt = optim.Adam(self.critic_1.parameters(), lr=lr)
         self.critic_2_opt = optim.Adam(self.critic_2.parameters(), lr=lr)
 
     def select_action(self, state, hidden_state=None):
-        # Numerical safety: skip calculation if state contains NaNs
         if np.any(np.isnan(state)):
             return np.array([0.0]), hidden_state
 
-        # Shape: (1, 1, Features) for LSTM compatibility
         state_t = torch.FloatTensor(state).unsqueeze(0).unsqueeze(0).to(self.device)
         mu, log_std, next_hidden = self.actor(state_t, hidden_state)
         
@@ -67,28 +62,23 @@ class SACAgent:
 
         states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
         
-        # Convert to 3D Tensors: (Batch, 1, Features)
         s = torch.FloatTensor(states).unsqueeze(1).to(self.device)
         a = torch.FloatTensor(actions).unsqueeze(1).to(self.device) 
         r = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
         ns = torch.FloatTensor(next_states).unsqueeze(1).to(self.device)
         d = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
 
-        # ----------------------------
-        # 1. Update Critics (Twin-Q)
-        # ----------------------------
         with torch.no_grad():
             next_mu, next_log_std, _ = self.actor(ns)
             next_std = next_log_std.exp()
             next_dist = torch.distributions.Normal(next_mu, next_std)
-            # Sample next actions and unsqueeze to 3D for target critics
+
             next_actions_raw = next_dist.rsample()
             next_actions = torch.tanh(next_actions_raw).unsqueeze(1)
             
             q1_t, _ = self.critic_1_target(ns, next_actions)
             q2_t, _ = self.critic_2_target(ns, next_actions)
             
-            # Entropy regularization
             log_prob_next = next_dist.log_prob(next_actions_raw).sum(-1, keepdim=True)
             target_v = torch.min(q1_t, q2_t) - self.alpha * log_prob_next
             target_q = r + (1 - d) * self.gamma * target_v
@@ -106,9 +96,6 @@ class SACAgent:
         q2_loss.backward()
         self.critic_2_opt.step()
 
-        # ----------------------------
-        # 2. Update Actor
-        # ----------------------------
         mu, log_std, _ = self.actor(s)
         std = log_std.exp()
         dist = torch.distributions.Normal(mu, std)
@@ -127,7 +114,6 @@ class SACAgent:
         actor_loss.backward()
         self.actor_opt.step()
 
-        # Soft Update Target Networks
         for target_param, param in zip(self.critic_1_target.parameters(), self.critic_1.parameters()):
             target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
         for target_param, param in zip(self.critic_2_target.parameters(), self.critic_2.parameters()):

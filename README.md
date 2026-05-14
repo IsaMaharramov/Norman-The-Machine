@@ -1,211 +1,128 @@
-# My notes?
-My notes ~ everything I do
+# Norman The Machine
+**Autonomous Nuclear Reactor Load-Following System via Recurrent Soft Actor-Critic (SAC)**
 
+![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
+![C++](https://img.shields.io/badge/C++-17-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C.svg)
+![Gymnasium](https://img.shields.io/badge/Gymnasium-RL%20Environment-lightgrey.svg)
+![Status](https://img.shields.io/badge/Status-Active%20Training-success.svg)
 
----
-
-# My notes 1:
-
-**Iodine-Xenon Differential Equations**
-
-The engine will solve these two coupled equations every time step:
-
-1. **Iodine Dynamics:**
-
-$$
-\frac{dI}{dt} = \gamma_I \Sigma_f \Phi - \lambda_I I
-$$
-
-2. **Xenon Dynamics:**
-
-$$
-\frac{dX}{dt} = (\gamma_X \Sigma_f \Phi + \lambda_I I) - (\lambda_X + \sigma_X \Phi)X
-$$
-
-If the flux $\Phi$ drops too fast (the agent tries to lower power), the $(\lambda_X + \sigma_X \Phi)X$ term becomes small, causing $X$ to spike. This is the "poison" we have to avoid.
+## Abstract
+**Norman_The_Machine** is a high-performance, physics-aware Reinforcement Learning framework designed to solve the highly non-linear control problem of nuclear reactor load-following. The system bridges a deterministic C++ nuclear kinetics engine (using 4th-Order Runge-Kutta integration) with a stochastic optimal control AI (PyTorch Recurrent Soft Actor-Critic). The primary optimization objective is to dynamically track highly variable grid energy demands while strictly preventing Xenon-135 induced "poison-out" transients.
 
 ---
 
-# My notes 2:
+---
 
-We will implement the physics using a **4th-order Runge-Kutta (RK4) integrator** instead of a simple Euler method. Why? Because nuclear reactor kinetics are "stiff" differential equations;
+## The Physics Core: Deterministic Kinetics
+The simulation environment is powered by a custom C++ module (`norman_core`), bound to Python via Pybind11. It solves the Point Kinetics Equations (PKE) coupled with Iodine-Xenon decay dynamics.
 
+### Iodine-Xenon Dynamics
+The dominant constraint in reactor load-following is the temporal lag between power adjustments and Xenon-135 concentration. The core models this continuous-time dynamic system:
+
+**Iodine-135 Production:**
+$$\frac{dI(t)}{dt} = \gamma_I \Sigma_f \phi(t) - \lambda_I I(t)$$
+
+**Xenon-135 Concentration:**
+$$\frac{dX(t)}{dt} = \gamma_X \Sigma_f \phi(t) + \lambda_I I(t) - \lambda_X X(t) - \sigma_X X(t) \phi(t)$$
+
+Because Xenon-135 has a massive neutron absorption cross-section ($\sigma_X$), a rapid decrease in power ($\phi$) causes an accumulation of Xenon (as Iodine continues to decay into it, but fewer neutrons are available to "burn" it away). The RL agent must learn to predict and mitigate this invisible, time-delayed accumulation.
 
 ---
 
-# My notes 3:
+## Machine Learning Architecture: Recurrent SAC
+Standard Markovian Reinforcement Learning agents fail in nuclear control because they cannot observe the derivative of the Iodine concentration. To solve the Xenon time-lag, this project implements a **Recurrent Soft Actor-Critic (LSTM-SAC)** architecture.
 
-core/src/ReactorDynamics.cpp -> physics part
+### The Soft Actor-Critic Objective
+SAC is an off-policy algorithm that optimizes a stochastic policy in an entropy-regularized framework. This prevents the control rods from converging to sub-optimal, rigid policies during early training. The objective is to maximize both expected return and entropy $\mathcal{H}$:
 
-core/src/bindings.cpp -> to bridge C++ and Python -> Pybind11
+$$J(\pi) = \sum_{t=0}^{T} \mathbb{E}_{(s_t, a_t) \sim \rho_\pi} [r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t))]$$
 
-I update CMakeLists.txt -> tells the compiler how to build the norman_core python module:
-```cmake
-cmake_minimum_required(VERSION 3.12)
-project(Norman_The_Machine)
+### Twin-Q Critic Network with LSTM Embedding
+To capture the historical trajectory of the reactor state, both the Actor and the Twin-Critics utilize a Long Short-Term Memory (LSTM) backbone. The observation state $s_t$ is embedded into a hidden state $h_t$:
 
-set(CMAKE_CXX_STANDARD 17)
+$$h_t = \text{LSTM}(s_t, h_{t-1})$$
 
-# Find pybind11
-find_package(pybind11 REQUIRED)
+The Critics minimize the Mean Squared Bellman Error (MSBE) using the temporal embedding, mitigating the overestimation bias inherent in continuous-action Q-learning:
 
-# Define the python module
-pybind11_add_module(norman_core core/src/bindings.cpp core/src/ReactorDynamics.cpp)
+$$J_Q(\phi_i) = \mathbb{E}_{(s,a) \sim \mathcal{D}} \left[ \frac{1}{2} \left( Q_{\phi_i}(h, a) - \left(r + \gamma \mathbb{E}_{s'}[V_{\bar{\phi}}(h')] \right) \right)^2 \right] \quad \text{for } i \in \{1, 2\}$$
 
-# Include the headers
-target_include_directories(norman_core PRIVATE core/include)
+### Feature Scaling & Numerical Hardening
+To maintain gradient stability during backpropagation, physical values ranging from $10^{13}$ to $10^{16}$ are continuously transformed via log-scaling before entering the neural network.
+
+$$obs = \left[ \log_{10}(\phi + \epsilon), \log_{10}(I + \epsilon), \log_{10}(X + \epsilon), P_{current}, P_{target} \right]$$
+
+---
+
+## Optimization Surface (Reward Formulation)
+The agent navigates a highly non-linear optimization surface. The reward function is dense and strictly penalizes both grid deviation and unsafe transient states. It is composed of three distinct penalty mechanisms to ensure smooth and safe load-following:
+
+**1. Quadratic Accuracy Penalty:**
+To enforce tight load-following tolerances, deviations from the target grid demand are penalized quadratically. This forces the agent to aggressively correct large errors while allowing precise micro-adjustments near the target.
+$$R_{accuracy} = -30.0 \cdot (P_{actual} - P_{target})^2$$
+
+**2. Xenon Safety Soft-Barrier:**
+Xenon accumulation is penalized proportionally to its concentration scaled against a $10^{16}$ baseline. This acts as a soft barrier, teaching the LSTM to anticipate and avoid rod movements that will trigger a delayed Xenon spike.
+$$R_{safety} = -2.0 \cdot \left( \frac{X_{actual}}{10^{16}} \right)$$
+
+**3. Critical Failure Guard:**
+If the agent's initial random exploration induces unrecoverable numerical stiffness in the C++ ODE solver (e.g., $P_{actual}$ approaching infinity or `NaN`), the episode is immediately truncated with a catastrophic penalty. This quarantines the mathematical instability, preventing broken data from entering the Replay Buffer and corrupting the network weights.
+$$R_{critical} = -500.0$$
+
+**Total Reward Function:**
+$$R_t = R_{accuracy} + R_{safety} + R_{critical}$$
+
+*(Note: Hard episode termination occurs if $X_{actual} > 5 \times 10^{16}$)*
+
+---
+
+## System Architecture
+```text
+NORMAN_THE_MACHINE/
+├── agent/
+│   ├── networks.py       # PyTorch LSTM Actor & Twin-Critic classes
+│   └── sac_agent.py      # Optimization logic, Bellman updates, Replay Buffer
+├── core/
+│   ├── include/          # C++ Headers (ReactorDynamics.hpp)
+│   └── src/              # C++ RK4 Integrator & Pybind11 bindings
+├── data/                 # Saved model weights (.pth)
+├── env/
+│   ├── demand.py         # Grid load-following trajectory generator
+│   └── reactor_env.py    # Gymnasium Wrapper with numerical hardening
+├── scripts/
+│   └── dashboard.py      # Matplotlib real-time telemetry visualization
+├── CMakeLists.txt        # C++ build configuration
+└── train.py              # Main training loop and memory management
 ```
 
-## Subnote 1:
+## Installation
 
-**build**
+### **1. Install Python Dependencies:**
 
-### Subsubnote 1:
-
-I update CMakeLists.txt -> pybind things:
-
-```cmake
-cmake_minimum_required(VERSION 3.12)
-project(Norman_The_Machine)
-
-set(CMAKE_CXX_STANDARD 17)
-
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
-
-execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
-    OUTPUT_VARIABLE pybind11_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-find_package(pybind11 REQUIRED PATHS ${pybind11_DIR})
-
-pybind11_add_module(norman_core core/src/bindings.cpp core/src/ReactorDynamics.cpp)
-
-target_include_directories(norman_core PRIVATE core/include)
+```bash
+pip install torch gymnasium numpy matplotlib
 ```
 
----
-
-# My notes 4:
-
-## subnote 1:
-
-reactor_env.py
-
-## subnote 2:
-
-Long Short-Term Memory (LSTM)
-
-networks.py
-
-## subnote 3:
-
-# Soft Actor-Critic (SAC)
-
-The goal of **SAC** is to maximize the expected reward while also maximizing **Entropy ($H$)**. This ensures the agent remains "curious" and explores the boundaries of reactor stability.
-
-### Actor Objective Function
-
-The objective function for the Actor is:
-
-$$J(\theta) = \mathbb{E}_{s_t \sim D, a_t \sim \pi_{\theta}}[\alpha \log(\pi_{\theta}(a_t|s_t)) - Q_{\phi}(s_t, a_t)]$$
-
-**Where:**
-
-*   **$\alpha$** is the temperature parameter (controlling the trade-off between entropy and reward).
-*   **$Q_{\phi}$** is the Critic's estimation of future value.
-
----
-
-# My notes 5:
-
-## subnote 1:
-
-train.py
-
-## subnote 2:
-
-sac_agent.py
-
-## subnote 3:
-
-```powershell
-copy build\Release\norman_core.cp313-win_amd64.pyd .
+### **2. Compile the Physics Core:**
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
 ```
 
-## subnote 4:
-
-updated -> sac_agent.py
-
-The class manages the learning process. It calculates the loss for the Actor and the Critics, ensuring the control rods move in a way that maximizes power accuracy while minimizing the Xenon penalty.
-
-## The Math of Optimization
-
-The Bellman Equation. The core objective -> to minimize the **Mean Squared Bellman Error (MSBE)**:
-
-$$J_Q(\phi) = \mathbb{E}_{(s,a) \sim D} \left[ \frac{1}{2} \left( Q_\phi(s, a) - (r + \gamma \mathbb{E}_{s' \sim P} [V_{\bar{\phi}}(s')]) \right)^2 \right]$$
-
----
-
-### Actor Update
-The Actor is then updated using the **Policy Gradient** to move towards actions that maximize the predicted Q-value while maintaining high entropy to avoid "getting stuck" in dangerous reactor states.
-
-> **Note:** High entropy is critical here—it's the difference between a smooth-running system and a "dangerous reactor state" meltdown. Stay safe out there.
-
----
-
-# My notes 6:
-
-## subnote 1:
-
-upated -> train.py -> ReplayBuffer, agent.update(), LSTM handling
-
-## subnote 2:
-
-demand.py -> a 24-hour cycle with "solar/wind noise," forcing SAC agent to constantly adjust the control rods without triggering a Xenon spike.
-
-## subnote 3:
-
-dashboard.py -> matplotlib to create a live-updating view of the reactor's "health."
-
-updated -> train.py
-
-updated -> reactor_env.py -> making agent to be more precise
-
----
-
-# My notes 7:
-
-## subnote 1:
-
-updated -> sac_agent
-
-## subnote 2:
-
-updated -> reactor_env -> updated _get_abs and _calculate_reward
-
-## subnote 3:
-
-updated -> train.py -> reducing the time step to 10 seconds to give the ODE solver more stability, then increase the episode length to compensate:
-
-```python
-env = NormanReactorEnv(dt=10.0) # changed in train.py
+### **3. Deploy the Bridge:**
+```text
+Copy the compiled `norman_core.*.pyd` (or `.so`) file from the `build/Release` directory into the project root.
 ```
 
+
 ---
 
-# My note 8:
+## Training the Model
 
-updated -> sac_agent.py -> Old: (Batch, 5) + (Batch, 1) -> New: (Batch, 1, 5) + (Batch, 1, 1)
+Initialize the Recurrent SAC agent and begin the load-following simulation:
 
-# My Note 9:
+```bash
+python train.py
+```
 
-## First run:
-
-<table>
-  <tr>
-    <td><img src="images/image1.png" width="100%"></td>
-    <td><img src="images/image2.png" width="100%"></td>
-  </tr>
-</table>

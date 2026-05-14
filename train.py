@@ -35,7 +35,7 @@ def main():
         state, _ = env.reset()
         episode_reward = 0
         done = False
-        hidden_state = None  # The LSTM's temporal memory
+        hidden_state = None
         
         step = 0
         while not done:
