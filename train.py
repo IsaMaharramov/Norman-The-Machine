@@ -9,7 +9,7 @@ from scripts.dashboard import ReactorDashboard
 
 def main():
     # Each step simulates 60 seconds of reactor physics via RK4.
-    env = NormanReactorEnv(dt=60.0) 
+    env = NormanReactorEnv(dt=10.0)  # I changed from 60 to 10 seconds for better stability with stiff ODEs. The agent will learn to control the reactor every 10 seconds, which is still a reasonable timescale for control actions in a nuclear reactor.
     
     # Observation: [Flux, Iodine, Xenon, Power, Target]
     agent = SACAgent(state_dim=5, action_dim=1)

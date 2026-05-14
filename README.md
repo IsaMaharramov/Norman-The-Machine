@@ -12,15 +12,15 @@ The engine will solve these two coupled equations every time step:
 
 1. **Iodine Dynamics:**
 
-   $$
-   \frac{dI}{dt} = \gamma_I \Sigma_f \Phi - \lambda_I I
-   $$
+$$
+\frac{dI}{dt} = \gamma_I \Sigma_f \Phi - \lambda_I I
+$$
 
 2. **Xenon Dynamics:**
 
-   $$
-   \frac{dX}{dt} = (\gamma_X \Sigma_f \Phi + \lambda_I I) - (\lambda_X + \sigma_X \Phi)X
-   $$
+$$
+\frac{dX}{dt} = (\gamma_X \Sigma_f \Phi + \lambda_I I) - (\lambda_X + \sigma_X \Phi)X
+$$
 
 If the flux $\Phi$ drops too fast (the agent tries to lower power), the $(\lambda_X + \sigma_X \Phi)X$ term becomes small, causing $X$ to spike. This is the "poison" we have to avoid.
 
@@ -173,5 +173,39 @@ updated -> train.py
 
 updated -> reactor_env.py -> making agent to be more precise
 
+---
 
+# My notes 7:
 
+## subnote 1:
+
+updated -> sac_agent
+
+## subnote 2:
+
+updated -> reactor_env -> updated _get_abs and _calculate_reward
+
+## subnote 3:
+
+updated -> train.py -> reducing the time step to 10 seconds to give the ODE solver more stability, then increase the episode length to compensate:
+
+```python
+env = NormanReactorEnv(dt=10.0) # changed in train.py
+```
+
+---
+
+# My note 8:
+
+updated -> sac_agent.py -> Old: (Batch, 5) + (Batch, 1) -> New: (Batch, 1, 5) + (Batch, 1, 1)
+
+# My Note 9:
+
+## First run:
+
+<table>
+  <tr>
+    <td><img src="images/image1.png" width="100%"></td>
+    <td><img src="images/image2.png" width="100%"></td>
+  </tr>
+</table>
