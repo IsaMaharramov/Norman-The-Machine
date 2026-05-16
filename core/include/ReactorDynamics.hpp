@@ -14,7 +14,7 @@ struct ReactorState
 class ReactorEngine
 {
 public:
-    ReactorEngine(double dt = 1.0); // dt in seconds
+    ReactorEngine(double dt = 1.0);
 
     void step(double control_rod_pos);
 
@@ -25,7 +25,6 @@ private:
     ReactorState state;
     double dt;
 
-    // Nuclear Constants (Approximate for U-235 Thermal Reactor)
     const double lambda_i = 2.87e-5; // s^-1
     const double lambda_x = 2.09e-5; // s^-1
     const double gamma_i = 0.0639;   // Fission yield for Iodine
@@ -33,7 +32,7 @@ private:
     const double sigma_x = 2.6e-18;  // Xenon absorption cross-section (cm^2)
     const double sigma_f = 0.1;      // Macroscopic fission cross-section (cm^-1)
 
-    std::vector<double> derivatives(double flux, double I, double X); // Internal derivative function for RK4
+    std::vector<double> derivatives(double flux, double I, double X); // RK4
 };
 
 #endif

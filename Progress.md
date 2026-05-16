@@ -199,6 +199,8 @@ env = NormanReactorEnv(dt=10.0) # changed in train.py
 
 updated -> sac_agent.py -> Old: (Batch, 5) + (Batch, 1) -> New: (Batch, 1, 5) + (Batch, 1, 1)
 
+---
+
 # My Note 9:
 
 ## First run:
@@ -209,3 +211,14 @@ updated -> sac_agent.py -> Old: (Batch, 5) + (Batch, 1) -> New: (Batch, 1, 5) + 
     <td><img src="images/image2.png" width="100%"></td>
   </tr>
 </table>
+
+---
+
+# My Note 10:
+
+updated -> reactor_env.py, sac_agent.py, train.py
+
+Train:
+CPU -> GPU
+
+train -> 636 episode

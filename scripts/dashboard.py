@@ -3,7 +3,7 @@ from collections import deque
 
 class ReactorDashboard:
     def __init__(self, max_points=200):
-        plt.ion() # Interactive mode on
+        plt.ion()
         self.fig, self.axs = plt.subplots(3, 1, figsize=(10, 8))
         self.max_points = max_points
         

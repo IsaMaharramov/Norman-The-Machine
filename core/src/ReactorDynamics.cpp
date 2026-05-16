@@ -30,8 +30,6 @@ std::vector<double> ReactorEngine::derivatives(double flux, double I, double X)
 
 void ReactorEngine::step(double control_rod_pos)
 {
-    // In this project, control_rod_pos (0 to 1) directly maps to neutron flux
-    // Realistically, rods change reactivity (rho), but we'll start with flux control
     double target_flux = control_rod_pos * 2e13;
 
     /// RK4 Integration for Iodine and Xenon
@@ -44,5 +42,5 @@ void ReactorEngine::step(double control_rod_pos)
     state.xenon_conc += (dt / 6.0) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
 
     state.neutron_flux = target_flux;
-    state.power_level = state.neutron_flux / 1e13; // normalized power
+    state.power_level = state.neutron_flux / 1e13;
 }

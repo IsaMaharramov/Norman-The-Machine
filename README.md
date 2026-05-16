@@ -14,8 +14,6 @@
 
 ---
 
----
-
 ## The Physics Core: Deterministic Kinetics
 The simulation environment is powered by a custom C++ module (`norman_core`), bound to Python via Pybind11. It solves the Point Kinetics Equations (PKE) coupled with Iodine-Xenon decay dynamics.
 
@@ -63,9 +61,9 @@ The agent navigates a highly non-linear optimization surface. The reward functio
 To enforce tight load-following tolerances, deviations from the target grid demand are penalized quadratically. This forces the agent to aggressively correct large errors while allowing precise micro-adjustments near the target.
 $$R_{accuracy} = -30.0 \cdot (P_{actual} - P_{target})^2$$
 
-**2. Xenon Safety Soft-Barrier:**
-Xenon accumulation is penalized proportionally to its concentration scaled against a $10^{16}$ baseline. This acts as a soft barrier, teaching the LSTM to anticipate and avoid rod movements that will trigger a delayed Xenon spike.
-$$R_{safety} = -2.0 \cdot \left( \frac{X_{actual}}{10^{16}} \right)$$
+**2. Advanced Exponential Safety Barrier:**
+To prevent gradient starvation while strictly enforcing the Poison-Out limit ($5 \times 10^{16}$), the Xenon penalty is formulated as an exponential barrier. This allows precise load-following in safe states while creating an insurmountable mathematical wall near critical thresholds.
+$$R_{safety} = -5.0 \cdot \left(e^{6.0 \cdot \left(\frac{X_{actual}}{5 \times 10^{16}}\right)} - 1.0\right)$$
 
 **3. Critical Failure Guard:**
 If the agent's initial random exploration induces unrecoverable numerical stiffness in the C++ ODE solver (e.g., $P_{actual}$ approaching infinity or `NaN`), the episode is immediately truncated with a catastrophic penalty. This quarantines the mathematical instability, preventing broken data from entering the Replay Buffer and corrupting the network weights.
@@ -97,31 +95,31 @@ NORMAN_THE_MACHINE/
 └── train.py              # Main training loop and memory management
 ```
 
+---
+
 ## Installation
 
-### **1. Install Python Dependencies:**
+### 1. Install Python Dependencies:
 
 ```bash
 pip install torch gymnasium numpy matplotlib
 ```
 
-### **2. Compile the Physics Core:**
+### 2. Compile the Physics Core:
+
 ```bash
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release
 ```
 
-### **3. Deploy the Bridge:**
-```text
-Copy the compiled `norman_core.*.pyd` (or `.so`) file from the `build/Release` directory into the project root.
-```
+### 3. Deploy the Bridge:
 
+Copy the compiled `norman_core.*.pyd` (or `.so`) file from the `build/Release` directory into the project root.
 
 ---
 
 ## Training the Model
-
 Initialize the Recurrent SAC agent and begin the load-following simulation:
 
 ```bash
