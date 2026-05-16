@@ -99,10 +99,10 @@ NORMAN_THE_MACHINE/
 
 ## Installation
 
-### 1. Install Python Dependencies:
+### 1. Install Requirements:
 
 ```bash
-pip install torch gymnasium numpy matplotlib
+pip install -r requirements.txt
 ```
 
 ### 2. Compile the Physics Core:
