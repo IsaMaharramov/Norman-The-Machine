@@ -10,7 +10,7 @@ class NormanReactorEnv(gym.Env):
         self.engine = norman_core.ReactorEngine(dt)
         self.demand_gen = DemandGenerator()
         
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32
         )
@@ -42,13 +42,16 @@ class NormanReactorEnv(gym.Env):
         ], dtype=np.float32)
 
     def step(self, action):
-        self.engine.step(float(action[0]))
+        mapped_action = (float(action[0]) + 1.0) / 2.0
+        self.engine.step(mapped_action)
         
         state = self.engine.get_state() 
         self.steps_taken += 1
         
         self.target_power = self.demand_gen.get_target(self.steps_taken)
-        reward = self._calculate_reward(state)
+        raw_reward = self._calculate_reward(state)
+        
+        reward = raw_reward / 100.0
         
         poisoned = bool(state.xenon_conc > 5e16) 
         math_fail = np.isnan(state.power_level) or np.isinf(state.power_level)

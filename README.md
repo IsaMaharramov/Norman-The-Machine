@@ -7,8 +7,6 @@
 ![Gymnasium](https://img.shields.io/badge/Gymnasium-RL%20Environment-lightgrey.svg)
 ![Status](https://img.shields.io/badge/Status-Active%20Training-success.svg)
 
-> ⚠️ **DRAFT / ACTIVE RESEARCH:** This repository is currently undergoing active development. The C++ physics bindings, LSTM tensor dimensionalities, and mathematical reward formulations are being actively tuned. Code and documentation are subject to frequent changes.
-
 ## Abstract
 **Norman_The_Machine** is a high-performance, physics-aware Reinforcement Learning framework designed to solve the highly non-linear control problem of nuclear reactor load-following. The system bridges a deterministic C++ nuclear kinetics engine (using 4th-Order Runge-Kutta integration) with a stochastic optimal control AI (PyTorch Recurrent Soft Actor-Critic). The primary optimization objective is to dynamically track highly variable grid energy demands while strictly preventing Xenon-135 induced "poison-out" transients.
 
