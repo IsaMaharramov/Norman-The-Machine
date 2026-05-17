@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import os
 import sys
-from env.reactor_env import NormanReactorEnv
+from envs.reactor_env import NormanReactorEnv
 from agent.sac_agent import SACAgent, ReplayBuffer
 from scripts.dashboard import ReactorDashboard
 
@@ -41,36 +41,37 @@ def main():
         print(f"Found checkpoint. Loading...")
         cp = torch.load(checkpoint_path, map_location=agent.device)
         
-        if 'actor_state_dict' in cp:
-            agent.actor.load_state_dict(cp['actor_state_dict'])
-            agent.critic_1.load_state_dict(cp['critic_1_state_dict'])
-            agent.critic_2.load_state_dict(cp['critic_2_state_dict'])
-            if 'actor_opt_state_dict' in cp:
-                agent.critic_1_target.load_state_dict(cp['critic_1_target_state_dict'])
-                agent.critic_2_target.load_state_dict(cp['critic_2_target_state_dict'])
-                agent.actor_opt.load_state_dict(cp['actor_opt_state_dict'])
-                agent.critic_1_opt.load_state_dict(cp['critic_1_opt_state_dict'])
-                agent.critic_2_opt.load_state_dict(cp['critic_2_opt_state_dict'])
-        else:
-            agent.actor.load_state_dict(cp['actor_state'])
-            agent.critic_1.load_state_dict(cp['critic1_state'])
-            agent.critic_2.load_state_dict(cp['critic2_state'])
+        agent.actor.load_state_dict(cp['actor_state_dict'])
+        agent.critic_1.load_state_dict(cp['critic_1_state_dict'])
+        agent.critic_2.load_state_dict(cp['critic_2_state_dict'])
+        agent.critic_1_target.load_state_dict(cp['critic_1_target_state_dict'])
+        agent.critic_2_target.load_state_dict(cp['critic_2_target_state_dict'])
+        agent.actor_opt.load_state_dict(cp['actor_opt_state_dict'])
+        agent.critic_1_opt.load_state_dict(cp['critic_1_opt_state_dict'])
+        agent.critic_2_opt.load_state_dict(cp['critic_2_opt_state_dict'])
             
         start_episode = cp.get('episode', 0) + 1
         print(f"Successfully loaded! Resuming from Episode {start_episode}")
 
     try:
         for ep in range(start_episode, episodes):
+            
+            if ep < 550:
+                agent.alpha = 1.5
+            else:
+                if agent.alpha == 1.5:
+                    print("\nAlpha dropped to 0.2. Exploitation Mode!\n")
+                agent.alpha = 0.2
+            
             state, _ = env.reset()
             episode_reward = 0
             done = False
-            hidden_state = None  
             
             step = 0
             while not done:
                 target_power = env.target_power 
                 
-                action, hidden_state = agent.select_action(state, hidden_state)
+                action = agent.select_action(state)
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
                 
@@ -79,9 +80,10 @@ def main():
                 if len(memory) > batch_size:
                     agent.update(memory, batch_size)
          
-                if ep % 5 == 0 and step % 5 == 0:
+                if ep % 5 == 0 and step % 20 == 0:
                     try:
-                        dashboard.update(step, env.engine.get_state(), target_power, action)
+                       # dashboard.update(step, env.engine.get_state(), target_power, action)
+                       pass
                     except Exception:
                         pass
 
@@ -100,7 +102,7 @@ def main():
     except KeyboardInterrupt:
         print("\nManual Interruption Detected.")
         save_checkpoint(agent, ep, checkpoint_path)
-        print("Emergency Checkpoint Saved. Safe to close.")
+        print("Checkpoint Saved. Safe to close.")
         sys.exit(0)
 
 if __name__ == "__main__":

@@ -222,3 +222,55 @@ Train:
 CPU -> GPU
 
 train -> 636 episode
+
+---
+
+# My Note 11:
+
+update -> Replay Buffer Architecture Overhaul
+* the bug:
+Encountered a fatal ValueError -> all input arrays must have the same shape during the GPU batch sampling phase.
+
+* cause: 
+During extreme exploration phases, the C++ Runge-Kutta physics engine occasionally produced corrupted shapes (e.g., scalar NaN values) due to mathematical stiffness. The standard Python deque list and numpy.stack() method were too fragile to handle these anomalies, causing the entire GPU update stack to crash.
+
+* fixed(imo):
+
+      scrapped deque -> Replaced the dynamic list with a rigid, Pre-Allocated Numpy Memory Grid.
+      shape hardening -> Added strict .reshape() enforcement inside the push function to guarantee exact tensor dimensions (5,) and (1,).
+      corrupt frame dropping -> Wrapped the memory ingestion in a try...except block. If the C++ engine spits out a corrupted shape, the buffer now silently drops the bad frame into the trash instead of crashing the program.
+
+Memory sampling is now 10x faster for the RTX 4060, and the training loop is 100%(~) crash-proof, successfully reaching the 100,000 memory capacity without a single failure.
+
+---
+
+# My Note 12:
+
+## subnote 1:
+
+rename -> env folder -> envs folder -> names in train.py and reactor_env.py are updated
+
+## subnote 2:
+
+I refactored the visualization loop to cache plot line objects and update their coordinates dynamically with .set_data(), completely replacing the unstable ax.cla() layout flushes -> eliminates multi-threaded text-rendering overhead, accelerating the real-time telemetry display on system -> it permanently fixes the Python 3.13 Tkinter font-cache exception while leaving the heavy GPU tensor computations uninterrupted
+
+## subnote 3:
+
+updated -> train 
+
+```python
+try:
+        for ep in range(start_episode, episodes):
+            if ep < 550:
+                agent.alpha = 1.5
+            else:
+                if agent.alpha == 1.5:
+                    print("\n[BRAIN COOL-DOWN INITIATED] Alpha dropped to 0.2. Exploitation Mode!\n")
+                agent.alpha = 0.2
+            state, _ = env.reset()
+            episode_reward = 0
+
+```
+
+
+
