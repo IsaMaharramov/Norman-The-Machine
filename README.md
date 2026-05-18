@@ -1,16 +1,14 @@
 # Norman The Machine
-**Autonomous Nuclear Reactor Load-Following System via Recurrent Soft Actor-Critic (SAC)**
+**Autonomous Nuclear Reactor Load-Following System via Soft Actor-Critic (SAC)**
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
 ![C++](https://img.shields.io/badge/C++-17-blue.svg)
 ![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C.svg)
 ![Gymnasium](https://img.shields.io/badge/Gymnasium-RL%20Environment-lightgrey.svg)
-![Status](https://img.shields.io/badge/Status-Active%20Training-success.svg)
-
-> ⚠️ **DRAFT / ACTIVE RESEARCH:** This repository is currently undergoing active development. The C++ physics bindings, LSTM tensor dimensionalities, and mathematical reward formulations are being actively tuned. Code and documentation are subject to frequent changes.
+![Status](https://img.shields.io/badge/Status-Completed-success.svg)
 
 ## Abstract
-**Norman_The_Machine** is a high-performance, physics-aware Reinforcement Learning framework designed to solve the highly non-linear control problem of nuclear reactor load-following. The system bridges a deterministic C++ nuclear kinetics engine (using 4th-Order Runge-Kutta integration) with a stochastic optimal control AI (PyTorch Recurrent Soft Actor-Critic). The primary optimization objective is to dynamically track highly variable grid energy demands while strictly preventing Xenon-135 induced "poison-out" transients.
+**Norman_The_Machine** is a high-performance, physics-aware Reinforcement Learning framework designed to solve the highly non-linear control problem of nuclear reactor load-following. The system bridges a deterministic C++ nuclear kinetics engine (using 4th-Order Runge-Kutta integration) with a stochastic optimal control AI (PyTorch Soft Actor-Critic). The primary optimization objective is to dynamically track highly variable grid energy demands while strictly preventing Xenon-135 induced "poison-out" transients.
 
 ---
 
@@ -30,49 +28,44 @@ Because Xenon-135 has a massive neutron absorption cross-section ($\sigma_X$), a
 
 ---
 
-## Machine Learning Architecture: Recurrent SAC
-Standard Markovian Reinforcement Learning agents fail in nuclear control because they cannot observe the derivative of the Iodine concentration. To solve the Xenon time-lag, this project implements a **Recurrent Soft Actor-Critic (LSTM-SAC)** architecture.
+## Machine Learning Architecture: Continuous SAC
+To map the continuous observation space to real-world control rod positions, this project implements a **Soft Actor-Critic (SAC)** architecture utilizing high-speed Dense Multi-Layer Perceptrons (MLPs).
 
 ### The Soft Actor-Critic Objective
 SAC is an off-policy algorithm that optimizes a stochastic policy in an entropy-regularized framework. This prevents the control rods from converging to sub-optimal, rigid policies during early training. The objective is to maximize both expected return and entropy $\mathcal{H}$:
 
 $$J(\pi) = \sum_{t=0}^{T} \mathbb{E}_{(s_t, a_t) \sim \rho_\pi} [r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t))]$$
 
-### Twin-Q Critic Network with LSTM Embedding
-To capture the historical trajectory of the reactor state, both the Actor and the Twin-Critics utilize a Long Short-Term Memory (LSTM) backbone. The observation state $s_t$ is embedded into a hidden state $h_t$:
+### Action Space Mapping & Feature Scaling
+To maintain gradient stability during backpropagation, physical values ranging from $10^{13}$ to $10^{16}$ are continuously transformed via log-scaling before entering the neural network. 
 
-$$h_t = \text{LSTM}(s_t, h_{t-1})$$
-
-The Critics minimize the Mean Squared Bellman Error (MSBE) using the temporal embedding, mitigating the overestimation bias inherent in continuous-action Q-learning:
-
-$$J_Q(\phi_i) = \mathbb{E}_{(s,a) \sim \mathcal{D}} \left[ \frac{1}{2} \left( Q_{\phi_i}(h, a) - \left(r + \gamma \mathbb{E}_{s'}[V_{\bar{\phi}}(h')] \right) \right)^2 \right] \quad \text{for } i \in \{1, 2\}$$
-
-### Feature Scaling & Numerical Hardening
-To maintain gradient stability during backpropagation, physical values ranging from $10^{13}$ to $10^{16}$ are continuously transformed via log-scaling before entering the neural network.
-
-$$obs = \left[ \log_{10}(\phi + \epsilon), \log_{10}(I + \epsilon), \log_{10}(X + \epsilon), P_{current}, P_{target} \right]$$
+Furthermore, to protect the C++ Runge-Kutta integrator from mathematically fatal negative neutron flux, the SAC's native `tanh` output `[-1.0, 1.0]` is strictly mapped to physical control rod bounds `[0.0, 1.0]` within the Gymnasium step function.
 
 ---
 
 ## Optimization Surface (Reward Formulation)
-The agent navigates a highly non-linear optimization surface. The reward function is dense and strictly penalizes both grid deviation and unsafe transient states. It is composed of three distinct penalty mechanisms to ensure smooth and safe load-following:
+The agent navigates a highly non-linear optimization surface. The reward function is dense and strictly penalizes both grid deviation and unsafe transient states. 
 
 **1. Quadratic Accuracy Penalty:**
-To enforce tight load-following tolerances, deviations from the target grid demand are penalized quadratically. This forces the agent to aggressively correct large errors while allowing precise micro-adjustments near the target.
+Enforces tight load-following tolerances, forcing the agent to aggressively correct large errors.
 $$R_{accuracy} = -30.0 \cdot (P_{actual} - P_{target})^2$$
 
 **2. Advanced Exponential Safety Barrier:**
-To prevent gradient starvation while strictly enforcing the Poison-Out limit ($5 \times 10^{16}$), the Xenon penalty is formulated as an exponential barrier. This allows precise load-following in safe states while creating an insurmountable mathematical wall near critical thresholds.
+To strictly enforce the Xenon Poison-Out limit ($5 \times 10^{16}$), the Xenon penalty is formulated as an exponential barrier. 
 $$R_{safety} = -5.0 \cdot \left(e^{6.0 \cdot \left(\frac{X_{actual}}{5 \times 10^{16}}\right)} - 1.0\right)$$
 
-**3. Critical Failure Guard:**
-If the agent's initial random exploration induces unrecoverable numerical stiffness in the C++ ODE solver (e.g., $P_{actual}$ approaching infinity or `NaN`), the episode is immediately truncated with a catastrophic penalty. This quarantines the mathematical instability, preventing broken data from entering the Replay Buffer and corrupting the network weights.
-$$R_{critical} = -500.0$$
+**3. Global Reward Scaling (Anti-Collapse):**
+During early exploration, exponential Xenon penalties can yield errors exceeding $-84,000$, resulting in catastrophic PyTorch gradient explosions. To stabilize the Twin-Q Critics, the final environment reward is globally scaled:
+$$R_{final} = \frac{R_{accuracy} + R_{safety}}{100.0}$$
 
-**Total Reward Function:**
-$$R_t = R_{accuracy} + R_{safety} + R_{critical}$$
+---
 
-*(Note: Hard episode termination occurs if $X_{actual} > 5 \times 10^{16}$)*
+## Research Outcomes: The Alignment Problem & "Safe Local Optimum"
+Following a 2,000-episode training loop, the agent demonstrated a fascinating example of the AI Alignment Problem (Reward Hacking). 
+
+Because the penalty for missing grid demand was quadratic, but the penalty for spiking Xenon was *exponential*, the SAC's Critic networks mathematically deduced that exploring variable power levels was a statistical death trap. Rather than attempting to track the grid and risking a meltdown, the agent discovered a "Safe Local Optimum." 
+
+The trained agent autonomously learned to drop the control rods to $0.0$ and completely shut the reactor down. By doing so, it willingly absorbs a predictable, flat penalty for missing the grid demand (scoring exactly $-189$ per episode), but mathematically guarantees 100% survival by permanently avoiding the Xenon threshold. **The AI prioritized absolute physical safety over industrial efficiency.**
 
 ---
 
@@ -80,13 +73,13 @@ $$R_t = R_{accuracy} + R_{safety} + R_{critical}$$
 ```text
 NORMAN_THE_MACHINE/
 ├── agent/
-│   ├── networks.py       # PyTorch LSTM Actor & Twin-Critic classes
+│   ├── networks.py       # PyTorch Dense MLP Actor & Twin-Critic classes
 │   └── sac_agent.py      # Optimization logic, Bellman updates, Replay Buffer
 ├── core/
 │   ├── include/          # C++ Headers (ReactorDynamics.hpp)
 │   └── src/              # C++ RK4 Integrator & Pybind11 bindings
 ├── data/                 # Saved model weights (.pth)
-├── env/
+├── envs/
 │   ├── demand.py         # Grid load-following trajectory generator
 │   └── reactor_env.py    # Gymnasium Wrapper with numerical hardening
 ├── scripts/
@@ -98,30 +91,25 @@ NORMAN_THE_MACHINE/
 ---
 
 ## Installation
-
-### 1. Install Requirements:
-
+1. Install Requirements:
 ```bash
 pip install -r requirements.txt
 ```
-
-### 2. Compile the Physics Core:
-
+2. Compile the Physics Core:
 ```bash
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release
 ```
-
-### 3. Deploy the Bridge:
-
-Copy the compiled `norman_core.*.pyd` (or `.so`) file from the `build/Release` directory into the project root.
-
+3. Deploy the Bridge:
+```text
+Copy the compiled norman_core.*.pyd (or .so) file from the build/Release directory into the project root.
+```
 ---
 
-## Training the Model
-Initialize the Recurrent SAC agent and begin the load-following simulation:
+## Evaluating the Model
+To observe the agent's behavior and the real-time Matplotlib telemetry dashboard, load the trained .pth weights in evaluation mode:
 
 ```bash
-python train.py
+python test.py
 ```

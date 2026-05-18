@@ -274,3 +274,22 @@ try:
 
 
 
+---
+
+# My Note 13:
+
+## subnote 1:
+* **The Bug:** PyTorch optimizer experienced catastrophic gradient explosions, reducing all neural network weights to `NaN`. Concurrently, the SAC agent was feeding negative actions (e.g., `-1.0`) into the C++ Runge-Kutta integrator, causing physics engine crashes due to negative neutron flux.
+* **The Fix:**
+    * Mapped the SAC's `tanh` output `[-1.0, 1.0]` to the C++ engine's expected `[0.0, 1.0]` using `mapped_action = (float(action[0]) + 1.0) / 2.0`. This mathematically shielded the physics equations.
+    * Compressed the raw environment reward (`reward = raw_reward / 100.0`) to prevent massive Xenon-poisoning penalties from blowing up the PyTorch gradients.
+
+## subnote 2:
+Completed the full 2,000 episode training loop on the RTX 4060 in headless mode. 
+* **Exploration Phase:** Ran with `alpha = 1.5` for the first 550 episodes, successfully filling the 100,000 memory buffer with physical reactor mapping data.
+* **Exploitation Phase:** At episode 550, automated cool-down dropped `alpha` to `0.2`, forcing the Critic networks to converge on an optimal policy based on the stored memories.
+
+## subnote 3:
+Created `test.py` to load `norman_checkpoint.pth` in evaluation mode with the Matplotlib `ReactorDashboard` active. 
+* **Observation:** The AI performed a classic "Reward Hack" (Alignment Problem). Because the penalty for missing the grid demand was quadratic, but the penalty for spiking Xenon was exponential, the Critic networks learned that exploring high power levels was a statistical death trap.
+* **The Strategy:** The agent found a "Safe Local Optimum." It learned to keep the control rods pinned at `0.0` (reactor shut down). It willingly absorbs a steady, predictable accuracy penalty (scoring exactly `-189` per episode) to guarantee 100% survival and avoid triggering the exponential Xenon poison-out limit. It prioritized absolute safety over grid efficiency.

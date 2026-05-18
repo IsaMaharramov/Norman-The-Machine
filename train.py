@@ -82,8 +82,8 @@ def main():
          
                 if ep % 5 == 0 and step % 20 == 0:
                     try:
-                       # dashboard.update(step, env.engine.get_state(), target_power, action)
-                       pass
+                        dashboard.update(step, env.engine.get_state(), target_power, action)
+                        pass
                     except Exception:
                         pass
 

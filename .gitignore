@@ -22,6 +22,6 @@ venv/
 *.swp
 *.swo
 
-data/*.pt
-data/*.pth
+#data/*.pt
+#data/*.pth
 logs/
