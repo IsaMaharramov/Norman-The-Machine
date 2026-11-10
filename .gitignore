@@ -1,6 +1,6 @@
 build/
-bin/
-obj/
+dist/
+*.egg-info/
 *.pyd
 *.so
 *.dylib
@@ -11,17 +11,14 @@ obj/
 
 __pycache__/
 *.py[cod]
-*$py.class
+.pytest_cache/
 .venv/
-env/
 venv/
+env/
 .env
 
 .vscode/
 .idea/
 *.swp
-*.swo
 
-#data/*.pt
-#data/*.pth
-logs/
+runs/

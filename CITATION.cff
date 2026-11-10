@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Norman in your research, please cite it as below."
+title: "Norman The Machine: a physics-grounded benchmark for AI control of nuclear reactor load-following"
+authors:
+  - family-names: Maharramov
+    given-names: Isa
+version: 1.0.0
+date-released: 2026-11-11
+license: MIT
+repository-code: "https://github.com/IsaMaharramov/Norman-The-Machine"
+keywords:
+  - nuclear reactor
+  - load following
+  - point kinetics
+  - xenon
+  - reinforcement learning
+  - safe reinforcement learning
+  - runtime assurance

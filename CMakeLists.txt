@@ -1,18 +1,19 @@
-cmake_minimum_required(VERSION 3.12)
-project(Norman_The_Machine)
+cmake_minimum_required(VERSION 3.15...3.31)
+project(norman LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
 
-execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
-    OUTPUT_VARIABLE pybind11_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+pybind11_add_module(_core cpp/src/reactor.cpp cpp/src/bindings.cpp)
+target_include_directories(_core PRIVATE cpp/include)
 
-find_package(pybind11 REQUIRED PATHS ${pybind11_DIR})
+if(MSVC)
+  target_compile_options(_core PRIVATE /W4 /O2)
+else()
+  target_compile_options(_core PRIVATE -Wall -Wextra -O3)
+endif()
 
-pybind11_add_module(norman_core core/src/bindings.cpp core/src/ReactorDynamics.cpp)
-
-target_include_directories(norman_core PRIVATE core/include)
+install(TARGETS _core DESTINATION norman)
