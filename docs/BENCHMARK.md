@@ -84,10 +84,10 @@ A leaderboard entry is the mean over **4 scenarios × 3 cycle states (BOC, MOC, 
 seeds {0, 1, 2}** = 36 episodes:
 
 ```bash
-python -m norman.evaluate --controller <name> --out results/<name>.json
+norman evaluate --controller <name> --out results/<name>.json
 ```
 
-Metrics per episode (`norman/metrics.py`):
+Metrics per episode (`src/norman/evaluation/metrics.py`):
 
 | Metric | Meaning |
 |---|---|

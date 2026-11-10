@@ -150,7 +150,7 @@ class SACAgent:
         self.alpha_opt.step()
 
         with torch.no_grad():
-            for p, tp in zip(self.critic.parameters(), self.critic_target.parameters()):
+            for p, tp in zip(self.critic.parameters(), self.critic_target.parameters(), strict=True):
                 tp.mul_(1.0 - c.tau).add_(c.tau * p)
 
         return {
@@ -173,7 +173,7 @@ class SACAgent:
         }, path)
 
     @classmethod
-    def load(cls, path: str, device: str | None = None) -> "SACAgent":
+    def load(cls, path: str, device: str | None = None) -> SACAgent:
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         agent = cls(ckpt["obs_dim"], ckpt["act_dim"], SACConfig(**ckpt["config"]), device)
         agent.actor.load_state_dict(ckpt["actor"])

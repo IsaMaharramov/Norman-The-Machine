@@ -5,12 +5,11 @@ import argparse
 from norman.control.shield import SafetyShield
 from norman.envs.load_follow import LoadFollowEnv
 from norman.envs.scenarios import SCENARIOS
-from norman.evaluate import make_controller, run_episode
+from norman.evaluation import make_controller, run_episode
 from norman.viz import plot_episode
 
 
-def main(argv=None) -> None:
-    ap = argparse.ArgumentParser(description="Run one Norman episode and plot it")
+def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--controller", default="pid", help="pid, hold, sac, or module:Class")
     ap.add_argument("--checkpoint")
     ap.add_argument("--scenario", default="eur_daily", choices=sorted(SCENARIOS))
@@ -21,8 +20,9 @@ def main(argv=None) -> None:
     ap.add_argument("--rods-only", action="store_true")
     ap.add_argument("--plot", help="save the figure to this path")
     ap.add_argument("--show", action="store_true", help="open an interactive window")
-    args = ap.parse_args(argv)
 
+
+def main(args: argparse.Namespace) -> None:
     env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours,
                         boron_control=not args.rods_only)
     if args.shield:
@@ -38,6 +38,3 @@ def main(argv=None) -> None:
         if args.plot:
             print(f"figure written to {args.plot}")
 
-
-if __name__ == "__main__":
-    main()

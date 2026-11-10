@@ -7,15 +7,13 @@ import time
 from pathlib import Path
 
 import numpy as np
-import torch
 
-from norman.agents.sac import ReplayBuffer, SACAgent, SACConfig
 from norman.envs.load_follow import LoadFollowEnv
 from norman.envs.scenarios import BENCHMARK_SCENARIOS
-from norman.evaluate import run_episode
+from norman.evaluation import run_episode
 
 
-def evaluate_agent(agent: SACAgent, seed: int) -> dict:
+def evaluate_agent(agent, seed: int) -> dict:
     rmse, cost, trips = [], 0, 0
     for scenario in BENCHMARK_SCENARIOS:
         env = LoadFollowEnv(scenario=scenario, cycle="MOC")
@@ -26,8 +24,7 @@ def evaluate_agent(agent: SACAgent, seed: int) -> dict:
     return {"eval_rmse_pct": float(np.mean(rmse)), "eval_cost_steps": cost, "eval_trips": trips}
 
 
-def main(argv=None) -> None:
-    ap = argparse.ArgumentParser(description="Train the Norman SAC baseline")
+def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--episodes", type=int, default=300)
     ap.add_argument("--scenario", default="random")
     ap.add_argument("--cycle", default="random")
@@ -38,7 +35,12 @@ def main(argv=None) -> None:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--device")
     ap.add_argument("--out", default="runs/sac")
-    args = ap.parse_args(argv)
+
+
+def main(args: argparse.Namespace) -> None:
+    import torch
+
+    from norman.agents.sac import ReplayBuffer, SACAgent, SACConfig
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -102,6 +104,3 @@ def main(argv=None) -> None:
             fh.flush()
             print(" | ".join(f"{k}={v}" for k, v in row.items()), flush=True)
 
-
-if __name__ == "__main__":
-    main()

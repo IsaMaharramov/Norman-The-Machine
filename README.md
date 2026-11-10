@@ -58,13 +58,13 @@ pytest
 Run a controller for one simulated day and plot it:
 
 ```bash
-python -m norman.run --controller pid --scenario fast_ramp --cycle MOC --plot day.png
+norman run --controller pid --scenario fast_ramp --cycle MOC --plot day.png
 ```
 
 Run the full benchmark:
 
 ```bash
-python -m norman.evaluate --controller pid --out results/pid.json
+norman evaluate --controller pid --out results/pid.json
 ```
 
 Use it like any Gymnasium environment:
@@ -82,7 +82,7 @@ print(info["power"], info["target"], info["cost"], info["violations"])
 Benchmark your own controller. Any class with `reset()` and `act(obs)` works:
 
 ```bash
-python -m norman.evaluate --controller my_package.my_module:MyController
+norman evaluate --controller my_package.my_module:MyController
 ```
 
 The C++ core needs a C++17 compiler at install time. Without one, Norman falls back
@@ -97,7 +97,7 @@ docker build -t norman .
 docker run --rm norman                      # full PID benchmark
 docker run --rm norman pytest -q            # verification suite
 docker run --rm -v "$PWD/out:/app/out" norman \
-    python -m norman.run --controller pid --scenario fast_ramp --plot /app/out/day.png
+    norman run --controller pid --scenario fast_ramp --plot /app/out/day.png
 ```
 
 The image uses CPU-only PyTorch. For GPU training, install locally with `pip install -e ".[rl]"`.
@@ -198,21 +198,36 @@ environment. Xenon had no reactivity effect, power followed the rods instantly, 
 xenon limit could never be reached, and the reward made inaction the cheapest
 option. Version 1 rebuilds the plant around real feedback physics and separates
 reward from safety cost, so a policy only scores well by actually controlling the
-reactor. The lesson behind the rebuild is that a learned controller is only as
+reactor. The original code is kept in [`legacy/v0/`](legacy/v0/). The lesson behind the rebuild is that a learned controller is only as
 trustworthy as the plant model and the objective it was trained on.
 
-## Layout
+## Project layout
 
 ```
-cpp/                 C++17 plant core (SDIRK2 integrator, analytic Jacobian) + pybind11 bindings
-norman/physics/      parameters, equations, SciPy reference backend, backend selection
-norman/envs/         Gymnasium environment, demand scenarios, operating limits
-norman/control/      PID baseline, Simplex safety shield
-norman/agents/       Soft Actor-Critic
-norman/evaluate.py   benchmark harness        norman/run.py   single-episode runner and plots
-norman/train_sac.py  SAC training             tests/          verification and environment tests
-docs/                model and benchmark specifications, figures
-results/             baseline results (JSON)
+Norman-The-Machine/
+├── cpp/                        C++17 plant core
+│   ├── include/norman/         reactor.hpp
+│   └── src/                    reactor.cpp (SDIRK2 solver), bindings.cpp (pybind11)
+├── src/norman/                 Python package
+│   ├── physics/                parameters, equations, SciPy reference backend
+│   ├── envs/                   Gymnasium environment, demand scenarios, operating limits
+│   ├── control/                PID baseline, Simplex safety shield
+│   ├── agents/                 Soft Actor-Critic
+│   ├── evaluation/             benchmark harness and metrics
+│   ├── cli/                    `norman evaluate | run | train`
+│   └── viz.py                  episode plots
+├── tests/                      verification and environment tests
+├── examples/                   minimal custom-controller example
+├── results/                    baseline results (JSON)
+├── docs/
+│   ├── MODEL.md                equations, parameters, sources, verification
+│   ├── BENCHMARK.md            task specification and evaluation protocol
+│   ├── figures/                plots used in this README
+│   └── notes/                  development notes from v0
+├── legacy/v0/                  original prototype, kept for reference
+├── Dockerfile
+├── pyproject.toml              build (scikit-build-core), dependencies, tooling
+└── CMakeLists.txt
 ```
 
 ## Citing

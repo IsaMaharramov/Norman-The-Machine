@@ -19,7 +19,7 @@ git clone https://github.com/IsaMaharramov/Norman-The-Machine
 cd Norman-The-Machine
 python -m venv .venv
 . .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[test,rl]"
+pip install -e ".[dev,rl]"
 pytest
 ```
 
@@ -28,7 +28,7 @@ clang elsewhere. Without one, use the pure-Python backend: pass `backend="python
 
 ## Rules for physics changes
 
-- Change the equations in **both** `norman/physics/model.py` and `cpp/src/reactor.cpp`.
+- Change the equations in **both** `src/norman/physics/model.py` and `cpp/src/reactor.cpp`.
   The parity tests fail if they disagree.
 - Add a verification test against an analytic or published result.
 - Update the parameter table and equations in `docs/MODEL.md`.

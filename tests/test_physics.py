@@ -37,7 +37,9 @@ def test_jacobian_matches_finite_differences():
         h = 1e-6 * max(1.0, abs(y[j]))
         e = np.zeros(13)
         e[j] = h
-        fd[:, j] = (model.derivatives(p, y + e, 0.3, 600.0, 0.08) - model.derivatives(p, y - e, 0.3, 600.0, 0.08)) / (2 * h)
+        plus = model.derivatives(p, y + e, 0.3, 600.0, 0.08)
+        minus = model.derivatives(p, y - e, 0.3, 600.0, 0.08)
+        fd[:, j] = (plus - minus) / (2 * h)
     assert np.allclose(J, fd, rtol=1e-5, atol=1e-8)
 
 

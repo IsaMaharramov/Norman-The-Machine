@@ -122,7 +122,7 @@ positions are integrated exactly inside each step, including the moment they hit
 their limits. One simulated day at a 1-minute control interval runs in about one
 second on a laptop.
 
-The pure-Python backend (`norman/physics/reference.py`) solves the same equations
+The pure-Python backend (`src/norman/physics/reference.py`) solves the same equations
 with SciPy's Radau IIA (5th order, adaptive, rtol 1e-8). It shares no numerical code
 with the C++ core, so the agreement between the two is a real check.
 

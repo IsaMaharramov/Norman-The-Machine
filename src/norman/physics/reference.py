@@ -54,7 +54,7 @@ class PythonReactor:
     def derivatives(self, y, rod: float, boron: float) -> np.ndarray:
         return model.derivatives(self.params, np.asarray(y, dtype=float), rod, boron, self.bias)
 
-    def copy(self) -> "PythonReactor":
+    def copy(self) -> PythonReactor:
         return copy.deepcopy(self)
 
     def _segments(self, duration: float, rod_rate: float, boron_rate: float):
@@ -70,7 +70,7 @@ class PythonReactor:
             if 0.0 < t_hit < duration:
                 cuts.add(t_hit)
         edges = sorted(cuts)
-        return list(zip(edges[:-1], edges[1:]))
+        return list(zip(edges[:-1], edges[1:], strict=True))
 
     def advance(self, duration: float, rod_command: float, boron_command: float) -> None:
         p = self.params

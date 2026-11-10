@@ -66,7 +66,7 @@ class CppReactor:
     def derivatives(self, y, rod: float, boron: float) -> np.ndarray:
         return np.asarray(self._r.derivatives(list(map(float, y)), rod, boron))
 
-    def copy(self) -> "CppReactor":
+    def copy(self) -> CppReactor:
         clone = object.__new__(CppReactor)
         clone.params = self.params
         clone._r = self._r.copy()

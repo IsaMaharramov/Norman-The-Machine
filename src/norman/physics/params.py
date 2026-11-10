@@ -98,7 +98,7 @@ class ReactorParams:
         gamma = self.gamma_iodine + self.gamma_xenon
         return self.gamma_iodine / gamma * (self.lambda_xenon + self.xenon_burn_rate)
 
-    def replace(self, **changes) -> "ReactorParams":
+    def replace(self, **changes) -> ReactorParams:
         return dataclasses.replace(self, **changes)
 
     def as_dict(self) -> dict:

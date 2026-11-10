@@ -3,7 +3,6 @@ build
 dist
 runs
 results
-images
 **/__pycache__
 **/*.pyc
 **/*.pyd
@@ -14,4 +13,5 @@ venv
 .pytest_cache
 .vscode
 .idea
-Progress.md
+docs/notes
+legacy

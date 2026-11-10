@@ -28,7 +28,8 @@ def rollout(controller, scenario: str) -> float:
         cost += info["cost"]
         done = terminated or truncated
     rmse = float(np.sqrt(np.mean(np.square(errors))) * 100)
-    print(f"{type(controller).__name__:<18} {scenario:<12} rmse={rmse:5.2f}%  cost steps={cost:.0f}  trip={info['trip']}")
+    name = type(controller).__name__
+    print(f"{name:<18} {scenario:<12} rmse={rmse:5.2f}%  cost steps={cost:.0f}  trip={info['trip']}")
     return rmse
 
 

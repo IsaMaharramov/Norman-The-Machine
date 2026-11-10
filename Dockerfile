@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 COPY pyproject.toml CMakeLists.txt README.md LICENSE ./
 COPY cpp ./cpp
-COPY norman ./norman
+COPY src ./src
 RUN pip install --no-cache-dir ".[test]"
 
 COPY tests ./tests
@@ -20,4 +20,4 @@ COPY docs ./docs
 ENV MPLBACKEND=Agg
 RUN mkdir -p /app/out
 
-CMD ["python", "-m", "norman.evaluate", "--controller", "pid"]
+CMD ["norman", "evaluate", "--controller", "pid"]

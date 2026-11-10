@@ -4,7 +4,7 @@ import pytest
 from norman.control.pid import PIDController
 from norman.control.shield import SafetyShield
 from norman.envs.load_follow import LoadFollowEnv
-from norman.evaluate import run_episode
+from norman.evaluation import run_episode
 
 
 @pytest.mark.parametrize("cycle", ["BOC", "MOC", "EOC"])
