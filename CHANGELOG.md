@@ -13,6 +13,7 @@ Complete rebuild as a benchmark.
   presets, domain randomization, per-step safety cost and reactor trip.
 - PID baseline, Simplex safety shield, Soft Actor-Critic agent.
 - `norman` command with `evaluate`, `run` and `train` subcommands.
+- Trained SAC baseline checkpoint (`models/sac_baseline.pt`) and its benchmark results.
 - Verification test suite, model and benchmark specifications, Docker image, CI.
 
 ### Moved

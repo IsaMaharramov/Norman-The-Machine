@@ -1,0 +1,12 @@
+{
+  "episodes": 300,
+  "scenario": "random",
+  "cycle": "random",
+  "hours": 24.0,
+  "seed": 0,
+  "eval_every": 10,
+  "warmup_steps": 5000,
+  "batch_size": 256,
+  "device": null,
+  "out": "C:/Users/ASUS/AppData/Local/Temp/claude/103a063c24d2b4b4/4f5a299a-8e86-41ab-9a6f-e443382baec6/scratchpad/runs/sac"
+}
