@@ -138,9 +138,33 @@ Mean over 3 cycle states × 3 seeds per scenario. Lower is better except "within
 | | fast_ramp | 20.70 | 50.00 | 82.0% | 0.0 | 0/9 |
 | | duck_curve | 21.28 | 47.68 | 28.8% | 0.0 | 0/9 |
 | | frequency_response | 3.43 | 6.15 | 17.9% | 0.0 | 0/9 |
+| **SAC** | eur_daily | 2.74 | 29.25 | 33.6% | 6.3 | 0/9 |
+| | fast_ramp | 7.50 | 57.04 | 27.2% | 7.3 | 0/9 |
+| | duck_curve | 34.74 | 50.47 | 25.0% | 4.4 | **3/9** |
+| | frequency_response | 22.64 | 30.68 | 26.5% | 2.6 | **2/9** |
+| **SAC + safety shield** | eur_daily | 2.55 | 6.85 | 33.6% | 0.0 | 0/9 |
+| | fast_ramp | 7.46 | 46.88 | 27.2% | 0.0 | 0/9 |
+| | duck_curve | 2.05 | 5.90 | 33.1% | 0.0 | 0/9 |
+| | frequency_response | 2.25 | 10.32 | 34.5% | 0.0 | 0/9 |
 
 Raw per-episode data, including rod travel, boron used and energy deficit, is in
 [`results/`](results/).
+
+**What the learned controller shows.** The SAC baseline
+([`models/sac_baseline.pt`](models/sac_baseline.pt)) was trained for 179 simulated
+plant-days on randomized demand and cycle states. On its own it trips the reactor in
+5 of 36 benchmark days. With the safety shield it has **zero trips and zero limit
+violations**, and its error drops on every task. But it still tracks 5–30 times worse
+than the PID. Two lessons follow. Runtime assurance can make a learned policy safe to
+evaluate; it cannot make it good. And model-free RL from scratch is far from solving
+this task, which is exactly why a shared benchmark is useful.
+
+Reproduce the SAC rows:
+
+```bash
+norman evaluate --controller sac --checkpoint models/sac_baseline.pt --out results/sac.json
+norman evaluate --controller sac --checkpoint models/sac_baseline.pt --shield --out results/sac_shield.json
+```
 
 **Where the open problem is.** On `fast_ramp` the PID baseline loses up to 18% of
 demand for a while after the return to full power. Xenon is high, the rods run out of
@@ -218,6 +242,7 @@ Norman-The-Machine/
 │   └── viz.py                  episode plots
 ├── tests/                      verification and environment tests
 ├── examples/                   minimal custom-controller example
+├── models/                     trained SAC baseline checkpoint and training log
 ├── results/                    baseline results (JSON)
 ├── docs/
 │   ├── MODEL.md                equations, parameters, sources, verification
