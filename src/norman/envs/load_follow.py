@@ -10,8 +10,10 @@ from norman.envs import safety
 from norman.envs.safety import SafetyLimits
 from norman.envs.scenarios import make_profile
 from norman.physics import model
+from norman.physics.axial import AxialParams
 from norman.physics.backend import make_reactor
 from norman.physics.params import CYCLE_INITIAL_BORON, ReactorParams, cycle_params, sample_cycle
+from norman.physics.plant import AxialPlant
 
 PREVIEW_MINUTES = (1, 15, 30, 60)
 OBS_NAMES = (
@@ -20,6 +22,8 @@ OBS_NAMES = (
     "xenon", "iodine", "reactivity_dollars", "power_rate_5pct_min", "episode_progress",
 )
 OBS = {name: i for i, name in enumerate(OBS_NAMES)}
+AXIAL_OBS_NAMES = ("axial_offset_10pct", "delta_i_error_band", "xenon_axial_offset_10pct", "peaking_excess")
+AXIAL_OBS = {name: len(OBS_NAMES) + i for i, name in enumerate(AXIAL_OBS_NAMES)}
 
 
 class LoadFollowEnv(gym.Env):
@@ -42,6 +46,9 @@ class LoadFollowEnv(gym.Env):
         error_scale: float = 0.05,
         actuator_penalty: float = 0.005,
         reward_gamma: float = 0.99,
+        core: str = "point",
+        axial: AxialParams | None = None,
+        coupling_interval: float = 5.0,
     ):
         super().__init__()
         self.scenario = scenario
@@ -60,10 +67,15 @@ class LoadFollowEnv(gym.Env):
         self.error_scale = error_scale
         self.actuator_penalty = actuator_penalty
         self.reward_gamma = reward_gamma
+        if core not in ("point", "axial"):
+            raise ValueError("core must be 'point' or 'axial'")
+        self.core = core
+        self.axial = axial or AxialParams()
+        self.coupling_interval = coupling_interval
 
         n_act = 2 if boron_control else 1
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_act,), dtype=np.float32)
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(len(OBS_NAMES),), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(len(self.observation_names),), dtype=np.float32)
 
         self.reactor = None
         self.profile = np.ones(self.steps + 61)
@@ -85,8 +97,26 @@ class LoadFollowEnv(gym.Env):
             params = self.base_params or cycle_params(self.cycle_name)
             if boron is None:
                 boron = CYCLE_INITIAL_BORON.get(self.cycle_name, 650.0)
-        reactor = make_reactor(params, self.backend)
-        return reactor, boron
+        if self.core == "axial":
+            return AxialPlant(params, self.axial, self.backend, self.coupling_interval), boron
+        return make_reactor(params, self.backend), boron
+
+    @property
+    def observation_names(self) -> tuple:
+        return OBS_NAMES + (AXIAL_OBS_NAMES if self.core == "axial" else ())
+
+    def _delta_i_error(self, reactor) -> float | None:
+        if self.core != "axial":
+            return None
+        return float(reactor.delta_i - reactor.delta_i_target)
+
+    def _violations(self, reactor, previous_power: float) -> dict:
+        y = reactor.state
+        return safety.check(
+            self.limits, peak_power=reactor.peak_power, power=float(y[model.N]),
+            previous_power=previous_power, minutes=self.minutes_per_step,
+            fuel_temperature=float(y[model.TF]), delta_i_error=self._delta_i_error(reactor),
+        )
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
@@ -135,6 +165,14 @@ class LoadFollowEnv(gym.Env):
             rate / self.limits.ramp_rate,
             self.t / self.steps,
         ], dtype=np.float32)
+        if self.core == "axial":
+            axial = np.array([
+                r.axial_offset / 0.1,
+                self._delta_i_error(r) / self.limits.axial_offset_band,
+                r.xenon_axial_offset / 0.1,
+                r.peaking - 1.0,
+            ], dtype=np.float32)
+            obs = np.concatenate([obs, axial])
         return obs
 
     def _commands(self, action) -> tuple[float, float]:
@@ -148,11 +186,7 @@ class LoadFollowEnv(gym.Env):
         rod_cmd, boron_cmd = self._commands(action)
         clone.advance(self.control_interval, rod_cmd, boron_cmd)
         y = clone.state
-        violations = safety.check(
-            self.limits, peak_power=clone.peak_power, power=y[model.N],
-            previous_power=self.reactor.power, minutes=self.minutes_per_step,
-            fuel_temperature=y[model.TF],
-        )
+        violations = self._violations(clone, self.reactor.power)
         return {
             "power": float(y[model.N]),
             "peak_power": float(clone.peak_power),
@@ -172,11 +206,7 @@ class LoadFollowEnv(gym.Env):
         y = self.reactor.state
         power = float(y[model.N])
         error = power - self.target()
-        violations = safety.check(
-            self.limits, peak_power=self.reactor.peak_power, power=power,
-            previous_power=self._prev_power, minutes=self.minutes_per_step,
-            fuel_temperature=float(y[model.TF]),
-        )
+        violations = self._violations(self.reactor, self._prev_power)
         cost = 1.0 if any(violations.values()) else 0.0
         reward = -min((error / self.error_scale) ** 2, 1.0)
         reward -= self.actuator_penalty * (abs(rod_cmd) + abs(boron_cmd))
@@ -199,7 +229,7 @@ class LoadFollowEnv(gym.Env):
         r = self.reactor
         y = r.state
         rho = r.reactivity_components()
-        return {
+        snap = {
             "t_min": self.t * self.minutes_per_step,
             "power": float(y[model.N]),
             "peak_power": float(r.peak_power),
@@ -219,6 +249,17 @@ class LoadFollowEnv(gym.Env):
             "violations": {k: bool(v) for k, v in violations.items()},
             "trip": bool(trip),
         }
+        if self.core == "axial":
+            snap.update({
+                "axial_offset": float(r.axial_offset),
+                "delta_i": float(r.delta_i),
+                "delta_i_target": float(r.delta_i_target),
+                "xenon_axial_offset": float(r.xenon_axial_offset),
+                "peaking": float(r.peaking),
+                "shape": [float(v) for v in r.shape],
+                "xenon_profile": [float(v) for v in r.core.xenon],
+            })
+        return snap
 
     def _info(self, cost, violations, trip) -> dict:
         r = self.reactor
@@ -232,4 +273,6 @@ class LoadFollowEnv(gym.Env):
             "cycle": self.cycle_name,
             "rod": float(r.rod),
             "boron": float(r.boron),
+            **({"axial_offset": float(r.axial_offset), "delta_i_error": self._delta_i_error(r)}
+               if self.core == "axial" else {}),
         }

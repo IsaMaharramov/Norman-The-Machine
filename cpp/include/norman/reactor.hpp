@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 
 namespace norman {
 
@@ -45,7 +46,7 @@ struct Params {
     double boron_rate_max = 3.0 / 60.0;
     double boron_max = 2000.0;
 
-    double nominal_flux = 3.0e13;
+    double nominal_flux = 5.0e13;
     double gamma_iodine = 0.0639;
     double gamma_xenon = 0.00237;
     double gamma_promethium = 0.0113;
@@ -57,6 +58,7 @@ struct Params {
     double nu = 2.43;
 
     double substep = 0.25;
+    std::vector<double> rod_worth_table;
 
     double coolant_flow_capacity() const;
     double fuel_to_coolant_conductance() const;
@@ -103,6 +105,7 @@ public:
     void reset(double power, double rod, double boron);
     void set_state(const Vec& y, double rod, double boron, double bias, double time);
     void advance(double duration, double rod_command, double boron_command);
+    void set_rod_worth_table(const std::vector<double>& table);
 
     const Params& params() const { return params_; }
     const Vec& state() const { return y_; }

@@ -16,6 +16,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--cycle", default="MOC", choices=["BOC", "MOC", "EOC"])
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--hours", type=float, default=24.0)
+    ap.add_argument("--core", default="point", choices=["point", "axial"])
     ap.add_argument("--shield", action="store_true")
     ap.add_argument("--rods-only", action="store_true")
     ap.add_argument("--plot", help="save the figure to this path")
@@ -24,7 +25,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours,
-                        boron_control=not args.rods_only)
+                        boron_control=not args.rods_only, core=args.core)
     if args.shield:
         env = SafetyShield(env)
     controller = make_controller(args.controller, args.checkpoint, not args.rods_only)
@@ -33,7 +34,8 @@ def main(args: argparse.Namespace) -> None:
     for k, v in m.items():
         print(f"{k:>22}: {v:.3f}" if isinstance(v, float) else f"{k:>22}: {v}")
     if args.plot or args.show:
-        title = f"{args.controller}{' + shield' if args.shield else ''} | {args.scenario} | {args.cycle}"
+        shield = " + shield" if args.shield else ""
+        title = f"{args.controller}{shield} | {args.scenario} | {args.cycle} | {args.core} core"
         plot_episode(history, title, args.plot, args.show)
         if args.plot:
             print(f"figure written to {args.plot}")

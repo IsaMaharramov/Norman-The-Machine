@@ -43,3 +43,17 @@ jobs:
         run: docker build -t norman .
       - name: Test in container
         run: docker run --rm norman pytest -q
+
+  paper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile paper
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: norman.tex
+          working_directory: paper
+      - uses: actions/upload-artifact@v4
+        with:
+          name: norman-paper
+          path: paper/norman.pdf

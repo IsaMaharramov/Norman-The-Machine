@@ -19,6 +19,14 @@ def cpp_available() -> bool:
     return _core is not None
 
 
+def native_params(params: ReactorParams):
+    native = _core.Params()
+    for name in PARAM_FIELDS:
+        value = getattr(params, name)
+        setattr(native, name, list(value) if isinstance(value, tuple) else value)
+    return native
+
+
 class CppReactor:
     backend = "cpp"
 
@@ -27,14 +35,13 @@ class CppReactor:
             raise ImportError("the compiled extension norman._core is not built")
         self.params = params or ReactorParams()
         self.params.validate()
-        native = _core.Params()
-        for name in PARAM_FIELDS:
-            value = getattr(self.params, name)
-            setattr(native, name, list(value) if isinstance(value, tuple) else value)
-        self._r = _core.Reactor(native)
+        self._r = _core.Reactor(native_params(self.params))
 
     def reset(self, power: float, rod: float, boron: float) -> None:
         self._r.reset(power, rod, boron)
+
+    def set_rod_worth_table(self, table) -> None:
+        self._r.set_rod_worth_table([float(v) for v in table])
 
     def set_state(self, y, rod: float, boron: float, bias: float, time: float = 0.0) -> None:
         self._r.set_state(list(map(float, y)), rod, boron, bias, time)

@@ -1,9 +1,12 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "norman/axial.hpp"
 #include "norman/reactor.hpp"
 
 namespace py = pybind11;
+using norman::AxialCore;
+using norman::AxialParams;
 using norman::Params;
 using norman::Reactor;
 using norman::Reactivity;
@@ -59,6 +62,7 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("sigma_samarium", &Params::sigma_samarium)
         .def_readwrite("nu", &Params::nu)
         .def_readwrite("substep", &Params::substep)
+        .def_readwrite("rod_worth_table", &Params::rod_worth_table)
         .def("validate", &Params::validate);
 
     py::class_<Reactor>(m, "Reactor")
@@ -76,10 +80,59 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("time", &Reactor::time)
         .def_property_readonly("peak_power", &Reactor::peak_power)
         .def_property_readonly("newton_failures", &Reactor::newton_failures)
+        .def("set_rod_worth_table", &Reactor::set_rod_worth_table, py::arg("table"))
         .def("reactivity", &Reactor::reactivity)
         .def("reactivity_components", [](const Reactor& r) { return to_dict(r.reactivity_components()); })
         .def("derivatives", [](const Reactor& r, const norman::Vec& y, double rod, double boron) {
             return norman::derivatives(r.params(), y, rod, boron, r.bias());
         })
         .def("copy", [](const Reactor& r) { return Reactor(r); });
+
+    py::class_<AxialParams>(m, "AxialParams")
+        .def(py::init<>())
+        .def_readwrite("nodes", &AxialParams::nodes)
+        .def_readwrite("height", &AxialParams::height)
+        .def_readwrite("extrapolation", &AxialParams::extrapolation)
+        .def_readwrite("migration_area", &AxialParams::migration_area)
+        .def_readwrite("design_axial_offset", &AxialParams::design_axial_offset)
+        .def_readwrite("max_shape_iterations", &AxialParams::max_shape_iterations)
+        .def_readwrite("shape_tolerance", &AxialParams::shape_tolerance)
+        .def_readwrite("poison_substep", &AxialParams::poison_substep)
+        .def("validate", &AxialParams::validate);
+
+    m.def("smallest_eigenvalue", &norman::smallest_eigenvalue, py::arg("diag"), py::arg("off"));
+
+    py::class_<AxialCore>(m, "AxialCore")
+        .def(py::init<const Params&, const AxialParams&>(), py::arg("params"), py::arg("axial"))
+        .def("initialize", &AxialCore::initialize, py::arg("power"), py::arg("rod"), py::arg("boron"))
+        .def("update", &AxialCore::update, py::arg("power"), py::arg("rod"), py::arg("boron"),
+             py::arg("coolant_power") = -1.0, py::arg("fuel_power") = -1.0)
+        .def("advance_poisons", &AxialCore::advance_poisons, py::arg("dt"), py::arg("mean_power"))
+        .def("solve_eigen", [](const AxialCore& c, const std::vector<double>& rho) {
+            std::vector<double> shape;
+            const double lambda = c.solve_eigen(rho, shape);
+            return py::make_tuple(lambda, shape);
+        })
+        .def("rod_coverage", &AxialCore::rod_coverage)
+        .def("rod_worth_curve", &AxialCore::rod_worth_curve, py::arg("points"), py::arg("boron"))
+        .def("set_poisons", &AxialCore::set_poisons)
+        .def_property_readonly("nodes", &AxialCore::nodes)
+        .def_property_readonly("node_height", &AxialCore::node_height)
+        .def_property_readonly("k_infinity_reference", &AxialCore::k_infinity_reference)
+        .def_property_readonly("shape", &AxialCore::shape)
+        .def_property_readonly("fuel_temperature", &AxialCore::fuel_temperature)
+        .def_property_readonly("coolant_temperature", &AxialCore::coolant_temperature)
+        .def_property_readonly("iodine", &AxialCore::iodine)
+        .def_property_readonly("xenon", &AxialCore::xenon)
+        .def_property_readonly("promethium", &AxialCore::promethium)
+        .def_property_readonly("samarium", &AxialCore::samarium)
+        .def_property_readonly("local_reactivity", &AxialCore::local_reactivity)
+        .def_property_readonly("reactivity", &AxialCore::reactivity)
+        .def_property_readonly("k_eff", &AxialCore::k_eff)
+        .def_property_readonly("bias", &AxialCore::bias)
+        .def_property_readonly("tilt", &AxialCore::tilt)
+        .def_property_readonly("axial_offset", &AxialCore::axial_offset)
+        .def_property_readonly("xenon_axial_offset", &AxialCore::xenon_axial_offset)
+        .def_property_readonly("peaking", &AxialCore::peaking)
+        .def("copy", [](const AxialCore& c) { return AxialCore(c); });
 }

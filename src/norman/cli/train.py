@@ -13,10 +13,10 @@ from norman.envs.scenarios import BENCHMARK_SCENARIOS
 from norman.evaluation import run_episode
 
 
-def evaluate_agent(agent, seed: int) -> dict:
+def evaluate_agent(agent, seed: int, core: str = "point") -> dict:
     rmse, cost, trips = [], 0, 0
     for scenario in BENCHMARK_SCENARIOS:
-        env = LoadFollowEnv(scenario=scenario, cycle="MOC")
+        env = LoadFollowEnv(scenario=scenario, cycle="MOC", core=core)
         _, m = run_episode(env, agent, seed)
         rmse.append(m["rmse_pct"])
         cost += m["cost_steps"]
@@ -29,6 +29,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--scenario", default="random")
     ap.add_argument("--cycle", default="random")
     ap.add_argument("--hours", type=float, default=24.0)
+    ap.add_argument("--core", default="point", choices=["point", "axial"])
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-every", type=int, default=10)
     ap.add_argument("--warmup-steps", type=int, default=5000)
@@ -47,7 +48,7 @@ def main(args: argparse.Namespace) -> None:
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
 
-    env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours, randomize=True,
+    env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours, randomize=True, core=args.core,
                         observation_noise=0.002)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
@@ -94,7 +95,7 @@ def main(args: argparse.Namespace) -> None:
                 "wall_s": round(time.perf_counter() - start, 1),
             }
             if (ep + 1) % args.eval_every == 0:
-                row.update(evaluate_agent(agent, seed=0))
+                row.update(evaluate_agent(agent, seed=0, core=args.core))
                 agent.save(str(out / "last.pt"), extra={"episode": ep})
                 score = row["eval_rmse_pct"] + 0.1 * row["eval_cost_steps"] + 10.0 * row["eval_trips"]
                 if score < best:

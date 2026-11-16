@@ -48,39 +48,49 @@ def run_episode(env, controller, seed: int):
 
 def evaluate(controller_name: str, scenarios, cycles, seeds, shield: bool = False,
              checkpoint: str | None = None, backend: str = "auto", hours: float = 24.0,
-             boron_control: bool = True, verbose: bool = True) -> list[dict]:
+             boron_control: bool = True, verbose: bool = True, core: str = "point") -> list[dict]:
     rows = []
     controller = make_controller(controller_name, checkpoint, boron_control)
     for scenario in scenarios:
         for cycle in cycles:
             env = LoadFollowEnv(scenario=scenario, cycle=cycle, backend=backend, hours=hours,
-                                boron_control=boron_control)
+                                boron_control=boron_control, core=core)
             if shield:
                 env = SafetyShield(env)
             for seed in seeds:
                 start = time.perf_counter()
                 _, m = run_episode(env, controller, seed)
-                row = {"scenario": scenario, "cycle": cycle, "seed": seed, **m,
+                row = {"scenario": scenario, "cycle": cycle, "seed": seed, "core": core, **m,
                        "wall_s": time.perf_counter() - start}
                 rows.append(row)
                 if verbose:
                     print(f"  {scenario:<19} {cycle} seed={seed}  rmse={m['rmse_pct']:.2f}%  "
-                          f"max={m['max_abs_error_pct']:.2f}%  cost={m['cost_steps']}  trip={m['trip']}")
+                          f"max={m['max_abs_error_pct']:.2f}%  cost={m['cost_steps']}  trip={m['trip']}", flush=True)
     return rows
 
 
 def markdown_table(name: str, rows: list[dict]) -> str:
-    lines = [
-        f"| {name} | RMSE % | max err % | within 1% | energy deficit MWh | rod strokes | "
-        "dilution ppm | boration ppm | cost steps | trips |",
-        "|---|---|---|---|---|---|---|---|---|---|",
-    ]
+    axial = "delta_i_rms_pct" in rows[0]
+    head = (f"| {name} | RMSE % | max err % | within 1% | energy deficit MWh | rod strokes | "
+            "dilution ppm | boration ppm | cost steps | trips |")
+    rule = "|---|---|---|---|---|---|---|---|---|---|"
+    if axial:
+        head += " dI rms % | dI violations | max Fz |"
+        rule += "---|---|---|"
+    lines = [head, rule]
     for scenario in dict.fromkeys(r["scenario"] for r in rows):
-        a = aggregate([r for r in rows if r["scenario"] == scenario])
-        lines.append(
+        subset = [r for r in rows if r["scenario"] == scenario]
+        a = aggregate(subset)
+        line = (
             f"| {scenario} | {a['rmse_pct']:.2f} | {a['max_abs_error_pct']:.2f} | "
             f"{a['time_within_1pct'] * 100:.1f}% | {a['energy_deficit_mwh']:.0f} | "
             f"{a['rod_travel_strokes']:.2f} | {a['boron_dilution_ppm']:.1f} | {a['boration_ppm']:.1f} | "
             f"{a['cost_steps']:.1f} | {a['trips']}/{a['episodes']} |"
         )
+        if axial:
+            dev = sum(r["delta_i_rms_pct"] for r in subset) / len(subset)
+            viol = sum(r["viol_axial_offset"] for r in subset) / len(subset)
+            fz = max(r["max_peaking"] for r in subset)
+            line += f" {dev:.2f} | {viol:.1f} | {fz:.2f} |"
+        lines.append(line)
     return "\n".join(lines)

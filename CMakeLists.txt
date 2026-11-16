@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 CONFIG REQUIRED)
 
-pybind11_add_module(_core cpp/src/reactor.cpp cpp/src/bindings.cpp)
+pybind11_add_module(_core cpp/src/reactor.cpp cpp/src/axial.cpp cpp/src/bindings.cpp)
 target_include_directories(_core PRIVATE cpp/include)
 
 if(MSVC)

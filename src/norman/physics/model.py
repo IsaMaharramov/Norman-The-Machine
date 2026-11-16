@@ -16,6 +16,12 @@ STATE_NAMES = (
 
 def rod_worth(p: ReactorParams, rod: float) -> float:
     z = min(max(rod, 0.0), 1.0)
+    table = p.rod_worth_table
+    if len(table) >= 2:
+        x = z * (len(table) - 1)
+        k = min(int(x), len(table) - 2)
+        w = x - k
+        return (1.0 - w) * table[k] + w * table[k + 1]
     return -p.rod_bank_worth * (z - math.sin(2.0 * math.pi * z) / (2.0 * math.pi))
 
 

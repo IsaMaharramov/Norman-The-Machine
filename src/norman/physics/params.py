@@ -37,7 +37,7 @@ class ReactorParams:
     boron_rate_max: float = 3.0 / 60.0
     boron_max: float = 2000.0
 
-    nominal_flux: float = 3.0e13
+    nominal_flux: float = 5.0e13
     gamma_iodine: float = 0.0639
     gamma_xenon: float = 0.00237
     gamma_promethium: float = 0.0113
@@ -49,6 +49,7 @@ class ReactorParams:
     nu: float = 2.43
 
     substep: float = 0.25
+    rod_worth_table: tuple = ()
 
     @property
     def betas(self) -> np.ndarray:
@@ -108,6 +109,8 @@ class ReactorParams:
         return out
 
     def validate(self) -> None:
+        if len(self.rod_worth_table) == 1:
+            raise ValueError("a rod worth table needs at least two points")
         if len(self.group_fractions) != 6 or len(self.group_decay) != 6:
             raise ValueError("six delayed-neutron groups are required")
         if not math.isclose(sum(self.group_fractions), 1.0, abs_tol=1e-6):

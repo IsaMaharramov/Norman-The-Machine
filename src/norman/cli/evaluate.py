@@ -20,19 +20,22 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--rods-only", action="store_true", help="disable boron control")
     ap.add_argument("--backend", default="auto", choices=["auto", "cpp", "python"])
     ap.add_argument("--hours", type=float, default=24.0)
+    ap.add_argument("--core", default="point", choices=["point", "axial"])
     ap.add_argument("--out", help="write per-episode results to this JSON file")
 
 
 def main(args: argparse.Namespace) -> None:
-    label = args.controller + ("+shield" if args.shield else "")
+    label = args.controller + ("+shield" if args.shield else "") + (" (axial)" if args.core == "axial" else "")
     rows = evaluate(args.controller, args.scenarios, args.cycles, args.seeds, args.shield,
-                    args.checkpoint, args.backend, args.hours, not args.rods_only)
-    print()
-    print(markdown_table(label, rows))
+                    args.checkpoint, args.backend, args.hours, not args.rods_only, core=args.core)
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         meta = {"controller": label, "checkpoint": args.checkpoint, "norman_version": __version__,
-                "python": platform.python_version(), "boron_control": not args.rods_only}
+                "python": platform.python_version(), "boron_control": not args.rods_only,
+                "core": args.core}
         out.write_text(json.dumps({"meta": meta, "episodes": rows}, indent=2))
-        print(f"\nresults written to {out}")
+    print()
+    print(markdown_table(label, rows))
+    if args.out:
+        print(f"\nresults written to {args.out}")

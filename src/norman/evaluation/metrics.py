@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-VIOLATION_TYPES = ("overpower", "ramp_rate", "fuel_temperature")
+VIOLATION_TYPES = ("overpower", "ramp_rate", "fuel_temperature", "axial_offset")
 
 
 def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: float,
@@ -24,6 +24,14 @@ def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: f
     boron = np.array([h["boron"] for h in history])
     d_boron = np.diff(boron)
 
+    axial = {}
+    if "delta_i" in history[0]:
+        dev = np.array([h["delta_i"] - h["delta_i_target"] for h in steps])
+        axial = {
+            "delta_i_rms_pct": float(np.sqrt(np.mean(dev ** 2)) * 100.0),
+            "max_peaking": float(max(h["peaking"] for h in history)),
+            "xenon_ao_swing": float(np.ptp([h["xenon_axial_offset"] for h in history])),
+        }
     return {
         "rmse_pct": float(np.sqrt(np.mean(error ** 2)) * 100.0),
         "mae_pct": float(np.mean(np.abs(error)) * 100.0),
@@ -39,6 +47,7 @@ def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: f
         "steps_completed": len(steps),
         "shield_interventions": int(interventions),
         "return": float(sum(h["reward"] for h in steps)),
+        **axial,
     }
 
 

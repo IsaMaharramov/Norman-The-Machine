@@ -33,6 +33,10 @@ class PythonReactor:
         self.time = 0.0
         self.peak_power = float(power)
 
+    def set_rod_worth_table(self, table) -> None:
+        self.params = self.params.replace(rod_worth_table=tuple(float(v) for v in table))
+        self.params.validate()
+
     def set_state(self, y, rod: float, boron: float, bias: float, time: float = 0.0) -> None:
         self.y = np.array(y, dtype=float)
         self.rod, self.boron, self.bias, self.time = float(rod), float(boron), float(bias), float(time)

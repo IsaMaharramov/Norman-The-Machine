@@ -87,6 +87,13 @@ double Inputs::boron_at(double t) const { return clamp(boron0 + boron_rate * t, 
 
 double rod_worth(const Params& p, double rod) {
     const double z = clamp(rod, 0.0, 1.0);
+    const auto& table = p.rod_worth_table;
+    if (table.size() >= 2) {
+        const double x = z * static_cast<double>(table.size() - 1);
+        const size_t k = std::min(static_cast<size_t>(x), table.size() - 2);
+        const double w = x - static_cast<double>(k);
+        return (1.0 - w) * table[k] + w * table[k + 1];
+    }
     return -p.rod_bank_worth * (z - std::sin(2.0 * kPi * z) / (2.0 * kPi));
 }
 
@@ -204,6 +211,11 @@ void Reactor::reset(double power, double rod, double boron) {
             params_.generation_time * params_.neutron_source / power;
     time_ = 0.0;
     peak_power_ = power;
+}
+
+void Reactor::set_rod_worth_table(const std::vector<double>& table) {
+    if (table.size() == 1) throw std::invalid_argument("a rod worth table needs at least two points");
+    params_.rod_worth_table = table;
 }
 
 void Reactor::set_state(const Vec& y, double rod, double boron, double bias, double time) {

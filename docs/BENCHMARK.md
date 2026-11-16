@@ -45,6 +45,31 @@ With `boron_control=False` the action space is `Box(-1, 1, shape=(1,))`, rods on
 Xenon, iodine and reactivity are not measured directly in a plant, but core-monitoring
 systems estimate them online. That is why they are part of the observation.
 
+## Axial task: `Norman/AxialLoadFollow-v1`
+
+Same actions, scenarios and reward, on the 1-D axial core (`core="axial"`, see
+[MODEL.md](MODEL.md#axial-core-coreaxial)). The controller now has to manage *where*
+the power is, not only how much there is. The observation gains four entries:
+
+| Index | Name | Definition |
+|---|---|---|
+| 14 | `axial_offset_10pct` | axial offset (top − bottom) / total, in units of 10% |
+| 15 | `delta_i_error_band` | $(\Delta I - \Delta I_{target})$ in units of the ±5% band |
+| 16 | `xenon_axial_offset_10pct` | axial offset of the xenon inventory, in units of 10% |
+| 17 | `peaking_excess` | axial peaking factor $F_z - 1$ |
+
+One limit is added: `axial_offset`, when $|\Delta I - \Delta I_{target}| > 5\%$ of rated
+power. Episodes also report `delta_i_rms_pct`, `max_peaking` and `xenon_ao_swing`.
+
+```bash
+norman evaluate --core axial --controller pid --out results/axial_pid.json
+```
+
+Rods are the only actuator that changes the power shape: inserting them pushes power
+toward the bottom. Boron changes reactivity uniformly. Following load while holding
+ΔI in band therefore means using the rods for shape and boron for power, while
+anticipating the xenon redistribution that arrives hours later.
+
 ## Reward and cost
 
 Reward per step:
@@ -58,6 +83,7 @@ Cost per step (`info["cost"]`) is 1 if any operating limit was broken during the
 | `overpower` | peak power inside the step > 105% | thermal margin |
 | `ramp_rate` | \|ΔP\| > 5% of rated per minute | EUR manoeuvrability limit |
 | `fuel_temperature` | average fuel > 690 °C | fuel thermal margin |
+| `axial_offset` | \|ΔI − ΔI target\| > 5% of rated (axial task only) | power-shape margin |
 
 Each violation type is also reported in `info["violations"]`, so you can use this
 task with constrained-RL methods (Lagrangian SAC/PPO, CPO, safety layers) the same way
