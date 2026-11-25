@@ -46,8 +46,10 @@ class CppReactor:
     def set_state(self, y, rod: float, boron: float, bias: float, time: float = 0.0) -> None:
         self._r.set_state(list(map(float, y)), rod, boron, bias, time)
 
-    def advance(self, duration: float, rod_command: float, boron_command: float) -> None:
-        self._r.advance(float(duration), float(rod_command), float(boron_command))
+    def advance(self, duration: float, rod_command: float, boron_command: float,
+                load: float | None = None) -> None:
+        demand = -1.0 if load is None else float(load)
+        self._r.advance(float(duration), float(rod_command), float(boron_command), demand)
 
     @property
     def state(self) -> np.ndarray:
@@ -63,6 +65,9 @@ class CppReactor:
     bias = property(lambda self: self._r.bias)
     time = property(lambda self: self._r.time)
     peak_power = property(lambda self: self._r.peak_power)
+    load = property(lambda self: self._r.load)
+    steam_power = property(lambda self: self._r.steam_power)
+    inlet_temperature = property(lambda self: self._r.inlet_temperature)
 
     def reactivity(self) -> float:
         return self._r.reactivity()

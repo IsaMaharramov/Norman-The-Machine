@@ -26,7 +26,8 @@ public:
     AxialCore(const Params& params, const AxialParams& axial);
 
     void initialize(double power, double rod, double boron);
-    double update(double power, double rod, double boron, double coolant_power = -1.0, double fuel_power = -1.0);
+    double update(double power, double rod, double boron, double coolant_power = -1.0, double fuel_power = -1.0,
+                  double inlet = -1.0);
     void advance_poisons(double dt, double mean_power);
     double solve_eigen(const std::vector<double>& local_reactivity, std::vector<double>& shape) const;
 
@@ -54,6 +55,7 @@ public:
     double axial_offset() const;
     double xenon_axial_offset() const;
     double peaking() const;
+    double inlet() const { return inlet_; }
 
     void set_poisons(const std::vector<double>& iodine, const std::vector<double>& xenon,
                      const std::vector<double>& promethium, const std::vector<double>& samarium);
@@ -78,6 +80,7 @@ private:
     double bias_ = 0.0;
     double tilt_ = 0.0;
     double reactivity_ = 0.0;
+    double inlet_ = 0.0;
 };
 
 }

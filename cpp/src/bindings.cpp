@@ -63,6 +63,13 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("nu", &Params::nu)
         .def_readwrite("substep", &Params::substep)
         .def_readwrite("rod_worth_table", &Params::rod_worth_table)
+        .def_readwrite("secondary", &Params::secondary)
+        .def_readwrite("hot_leg_time", &Params::hot_leg_time)
+        .def_readwrite("cold_leg_time", &Params::cold_leg_time)
+        .def_readwrite("sg_primary_capacity", &Params::sg_primary_capacity)
+        .def_readwrite("sg_secondary_capacity", &Params::sg_secondary_capacity)
+        .def_readwrite("t_saturation_full", &Params::t_saturation_full)
+        .def_readwrite("turbine_valve_max", &Params::turbine_valve_max)
         .def("validate", &Params::validate);
 
     py::class_<Reactor>(m, "Reactor")
@@ -71,7 +78,10 @@ PYBIND11_MODULE(_core, m) {
         .def("set_state", &Reactor::set_state, py::arg("y"), py::arg("rod"), py::arg("boron"),
              py::arg("bias"), py::arg("time") = 0.0)
         .def("advance", &Reactor::advance, py::arg("duration"), py::arg("rod_command"),
-             py::arg("boron_command"), py::call_guard<py::gil_scoped_release>())
+             py::arg("boron_command"), py::arg("load") = -1.0, py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("load", &Reactor::load)
+        .def_property_readonly("steam_power", &Reactor::steam_power)
+        .def_property_readonly("inlet_temperature", &Reactor::inlet)
         .def_property_readonly("state", &Reactor::state)
         .def_property_readonly("power", &Reactor::power)
         .def_property_readonly("rod", &Reactor::rod)
@@ -84,7 +94,7 @@ PYBIND11_MODULE(_core, m) {
         .def("reactivity", &Reactor::reactivity)
         .def("reactivity_components", [](const Reactor& r) { return to_dict(r.reactivity_components()); })
         .def("derivatives", [](const Reactor& r, const norman::Vec& y, double rod, double boron) {
-            return norman::derivatives(r.params(), y, rod, boron, r.bias());
+            return norman::derivatives(r.params(), y, rod, boron, r.bias(), r.load());
         })
         .def("copy", [](const Reactor& r) { return Reactor(r); });
 
@@ -100,13 +110,14 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("poison_substep", &AxialParams::poison_substep)
         .def("validate", &AxialParams::validate);
 
+    m.def("saturation_pressure", &norman::saturation_pressure, py::arg("t_celsius"));
     m.def("smallest_eigenvalue", &norman::smallest_eigenvalue, py::arg("diag"), py::arg("off"));
 
     py::class_<AxialCore>(m, "AxialCore")
         .def(py::init<const Params&, const AxialParams&>(), py::arg("params"), py::arg("axial"))
         .def("initialize", &AxialCore::initialize, py::arg("power"), py::arg("rod"), py::arg("boron"))
         .def("update", &AxialCore::update, py::arg("power"), py::arg("rod"), py::arg("boron"),
-             py::arg("coolant_power") = -1.0, py::arg("fuel_power") = -1.0)
+             py::arg("coolant_power") = -1.0, py::arg("fuel_power") = -1.0, py::arg("inlet") = -1.0)
         .def("advance_poisons", &AxialCore::advance_poisons, py::arg("dt"), py::arg("mean_power"))
         .def("solve_eigen", [](const AxialCore& c, const std::vector<double>& rho) {
             std::vector<double> shape;
@@ -134,5 +145,6 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("axial_offset", &AxialCore::axial_offset)
         .def_property_readonly("xenon_axial_offset", &AxialCore::xenon_axial_offset)
         .def_property_readonly("peaking", &AxialCore::peaking)
+        .def_property_readonly("inlet", &AxialCore::inlet)
         .def("copy", [](const AxialCore& c) { return AxialCore(c); });
 }

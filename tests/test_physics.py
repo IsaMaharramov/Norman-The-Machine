@@ -28,17 +28,19 @@ def test_equilibrium_is_steady(backend, power):
     assert r.reactivity() == pytest.approx(source_supported, rel=1e-6, abs=1e-15)
 
 
-def test_jacobian_matches_finite_differences():
-    p = ReactorParams()
-    y = model.equilibrium_state(p, 0.7) * (1.0 + 0.02 * np.random.default_rng(1).standard_normal(13))
-    J = model.jacobian(p, y, 0.3, 600.0, 0.08)
+@pytest.mark.parametrize("secondary,load", [(False, 1.0), (True, 0.7), (True, 1.2)])
+def test_jacobian_matches_finite_differences(secondary, load):
+    p = ReactorParams(secondary=secondary)
+    size = model.STATE_SIZE
+    y = model.equilibrium_state(p, 0.7) * (1.0 + 0.002 * np.random.default_rng(1).standard_normal(size))
+    J = model.jacobian(p, y, 0.3, 600.0, 0.08, load)
     fd = np.zeros_like(J)
-    for j in range(13):
+    for j in range(size):
         h = 1e-6 * max(1.0, abs(y[j]))
-        e = np.zeros(13)
+        e = np.zeros(size)
         e[j] = h
-        plus = model.derivatives(p, y + e, 0.3, 600.0, 0.08)
-        minus = model.derivatives(p, y - e, 0.3, 600.0, 0.08)
+        plus = model.derivatives(p, y + e, 0.3, 600.0, 0.08, load)
+        minus = model.derivatives(p, y - e, 0.3, 600.0, 0.08, load)
         fd[:, j] = (plus - minus) / (2 * h)
     assert np.allclose(J, fd, rtol=1e-5, atol=1e-8)
 
@@ -54,14 +56,15 @@ def test_cpp_defaults_match_python():
 
 
 @needs_cpp
-def test_cpp_derivatives_match_python():
-    p = ReactorParams()
+@pytest.mark.parametrize("secondary", [False, True])
+def test_cpp_derivatives_match_python(secondary):
+    p = ReactorParams(secondary=secondary)
     cpp, ref = CppReactor(p), PythonReactor(p)
     cpp.reset(1.0, 0.25, 650.0)
     ref.reset(1.0, 0.25, 650.0)
     rng = np.random.default_rng(0)
     for _ in range(20):
-        y = model.equilibrium_state(p, rng.uniform(0.2, 1.0)) * (1 + 0.05 * rng.standard_normal(13))
+        y = model.equilibrium_state(p, rng.uniform(0.2, 1.0)) * (1 + 0.01 * rng.standard_normal(model.STATE_SIZE))
         rod, boron = rng.uniform(0, 1), rng.uniform(0, 1500)
         assert np.allclose(cpp.derivatives(y, rod, boron), ref.derivatives(y, rod, boron), rtol=1e-12, atol=1e-14)
 

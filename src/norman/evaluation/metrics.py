@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 
-VIOLATION_TYPES = ("overpower", "ramp_rate", "fuel_temperature", "axial_offset")
+VIOLATION_TYPES = ("overpower", "ramp_rate", "fuel_temperature", "axial_offset", "steam_pressure")
 
 
 def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: float,
                     rated_power_mw: float = 3000.0, interventions: int = 0) -> dict:
     steps = history[1:]
-    power = np.array([h["power"] for h in steps])
+    output = "electric" if "electric" in history[0] else "power"
+    power = np.array([h[output] for h in steps])
     target = np.array([h["target"] for h in steps])
     tripped = any(h["trip"] for h in steps)
 
@@ -32,6 +33,16 @@ def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: f
             "max_peaking": float(max(h["peaking"] for h in history)),
             "xenon_ao_swing": float(np.ptp([h["xenon_axial_offset"] for h in history])),
         }
+    plant = {}
+    if "tavg_error" in history[0]:
+        tavg = np.array([h["tavg_error"] for h in steps])
+        pressure = np.array([h["steam_pressure"] for h in steps])
+        plant = {
+            "tavg_rms_k": float(np.sqrt(np.mean(tavg ** 2))),
+            "tavg_max_k": float(np.max(np.abs(tavg))),
+            "steam_pressure_min": float(pressure.min()),
+            "steam_pressure_max": float(pressure.max()),
+        }
     return {
         "rmse_pct": float(np.sqrt(np.mean(error ** 2)) * 100.0),
         "mae_pct": float(np.mean(np.abs(error)) * 100.0),
@@ -48,6 +59,7 @@ def episode_metrics(history: list[dict], horizon_steps: int, minutes_per_step: f
         "shield_interventions": int(interventions),
         "return": float(sum(h["reward"] for h in steps)),
         **axial,
+        **plant,
     }
 
 

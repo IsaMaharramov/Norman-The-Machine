@@ -78,6 +78,7 @@ class PythonAxialCore:
         self.promethium = np.ones(n)
         self.samarium = np.ones(n)
         self.local_reactivity = np.zeros(n)
+        self.inlet = p.t_inlet
         self.bias = 0.0
         self.tilt = 0.0
         self.reactivity = 0.0
@@ -122,8 +123,8 @@ class PythonAxialCore:
         flow = p.coolant_flow_capacity
         conductance = p.fuel_to_coolant_conductance / self.nodes
         node = self.shape * p.rated_power / self.nodes
-        t_out = p.t_inlet + np.cumsum(coolant_power * node) / flow
-        t_in = np.concatenate([[p.t_inlet], t_out[:-1]])
+        t_out = self.inlet + np.cumsum(coolant_power * node) / flow
+        t_in = np.concatenate([[self.inlet], t_out[:-1]])
         self.coolant_temperature = 0.5 * (t_in + t_out)
         self.fuel_temperature = self.coolant_temperature + p.fuel_power_fraction * fuel_power * node / conductance
 
@@ -203,7 +204,8 @@ class PythonAxialCore:
         self.reactivity = self._iterate(power, rod, boron, True, True)
 
     def update(self, power: float, rod: float, boron: float, coolant_power: float | None = None,
-               fuel_power: float | None = None) -> float:
+               fuel_power: float | None = None, inlet: float | None = None) -> float:
+        self.inlet = self.params.t_inlet if inlet is None else float(inlet)
         self.reactivity = self._iterate(power, rod, boron, False, False, coolant_power, fuel_power)
         return self.reactivity
 
@@ -236,7 +238,7 @@ class CppAxialCore:
     ARRAYS = ("shape", "fuel_temperature", "coolant_temperature", "iodine", "xenon", "promethium",
               "samarium", "local_reactivity")
     SCALARS = ("nodes", "node_height", "k_infinity_reference", "reactivity", "k_eff", "bias", "tilt",
-               "axial_offset", "xenon_axial_offset", "peaking")
+               "axial_offset", "xenon_axial_offset", "peaking", "inlet")
 
     def __init__(self, params: ReactorParams | None = None, axial: AxialParams | None = None):
         if _core is None:
@@ -263,10 +265,11 @@ class CppAxialCore:
         self._c.initialize(float(power), float(rod), float(boron))
 
     def update(self, power: float, rod: float, boron: float, coolant_power: float | None = None,
-               fuel_power: float | None = None) -> float:
+               fuel_power: float | None = None, inlet: float | None = None) -> float:
         cp = -1.0 if coolant_power is None else float(coolant_power)
         fp = -1.0 if fuel_power is None else float(fuel_power)
-        return self._c.update(float(power), float(rod), float(boron), cp, fp)
+        ti = -1.0 if inlet is None else float(inlet)
+        return self._c.update(float(power), float(rod), float(boron), cp, fp, ti)
 
     def advance_poisons(self, dt: float, mean_power: float) -> None:
         self._c.advance_poisons(float(dt), float(mean_power))

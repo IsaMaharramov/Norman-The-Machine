@@ -68,6 +68,25 @@ def _delta_i_panel(ax, t, history, band):
     ax.grid(alpha=0.3)
 
 
+def _tavg_panel(ax, t, history):
+    tavg = np.array([h["t_coolant"] for h in history])
+    reference = tavg - np.array([h["tavg_error"] for h in history])
+    ax.plot(t, reference, "--", color="#27ae60", lw=1.2, label="T_avg program")
+    ax.plot(t, tavg, color="#c0392b", lw=1.4, label="T_avg")
+    ax.plot(t, [h["t_cold"] for h in history], color="#3498db", lw=1.0, label="cold leg")
+    ax.set_ylabel("temperature [°C]")
+    ax.legend(loc="lower left", ncol=3, frameon=False)
+    ax.grid(alpha=0.3)
+
+
+def _steam_panel(ax, t, history, low, high):
+    ax.axhspan(low, high, color="#2ecc71", alpha=0.12, label="allowed range")
+    ax.plot(t, [h["steam_pressure"] for h in history], color="#1f6fb2", lw=1.4, label="steam pressure")
+    ax.set_ylabel("steam pressure [MPa]")
+    ax.legend(loc="lower left", ncol=2, frameon=False)
+    ax.grid(alpha=0.3)
+
+
 def _profile_panel(ax, fig, t, history, key, label, cmap, relative):
     data = np.array([h[key] for h in history]).T
     if relative:
@@ -87,8 +106,18 @@ def plot_episode(history: list[dict], title: str = "", path: str | None = None, 
 
     t = np.array([h["t_min"] for h in history]) / 60.0
     axial = "shape" in history[0]
+    plant = "tavg_error" in history[0]
 
-    if axial:
+    if plant:
+        fig, axs = plt.subplots(5, 1, figsize=(11, 13), sharex=True, constrained_layout=True)
+        _power_panel(axs[0], t, history, title)
+        axs[0].plot(t, [h["electric"] * 100 for h in history], color="#8e44ad", lw=1.0, label="turbine output")
+        axs[0].legend(loc="lower left", ncol=4, frameon=False)
+        _actuator_panel(axs[1], t, history)
+        _tavg_panel(axs[2], t, history)
+        _steam_panel(axs[3], t, history, 5.5, 8.0)
+        _reactivity_panel(axs[4], t, history)
+    elif axial:
         fig, axs = plt.subplots(6, 1, figsize=(12, 16), sharex=True, constrained_layout=True)
         _power_panel(axs[0], t, history, title)
         _actuator_panel(axs[1], t, history)

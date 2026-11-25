@@ -5,7 +5,7 @@
 
 namespace norman {
 
-constexpr int kStateSize = 13;
+constexpr int kStateSize = 17;
 constexpr int kGroups = 6;
 
 enum Index : int {
@@ -17,6 +17,10 @@ enum Index : int {
     kXenon = 10,
     kPromethium = 11,
     kSamarium = 12,
+    kHotLeg = 13,
+    kSgPrimary = 14,
+    kColdLeg = 15,
+    kSaturation = 16,
 };
 
 using Vec = std::array<double, kStateSize>;
@@ -60,6 +64,17 @@ struct Params {
     double substep = 0.25;
     std::vector<double> rod_worth_table;
 
+    bool secondary = false;
+    double hot_leg_time = 2.0;
+    double cold_leg_time = 3.0;
+    double sg_primary_capacity = 7.0e8;
+    double sg_secondary_capacity = 2.0e9;
+    double t_saturation_full = 285.0;
+    double turbine_valve_max = 1.05;
+
+    double sg_conductance() const;
+    double steam_pressure_full() const;
+    double tavg_reference(double load) const;
     double coolant_flow_capacity() const;
     double fuel_to_coolant_conductance() const;
     double xenon_burn_rate() const;
@@ -88,14 +103,21 @@ struct Inputs {
     double boron0 = 0.0;
     double boron_rate = 0.0;
     double boron_max = 0.0;
+    double load0 = 1.0;
+    double load_rate = 0.0;
     double rod_at(double t) const;
     double boron_at(double t) const;
+    double load_at(double t) const { return load0 + load_rate * t; }
 };
+
+double saturation_pressure(double t_celsius);
+double inlet_temperature(const Params& p, const Vec& y);
+double steam_fraction(const Params& p, double t_saturation, double load);
 
 double rod_worth(const Params& p, double rod);
 Reactivity reactivity_components(const Params& p, const Vec& y, double rod, double boron, double bias);
-Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double bias);
-Mat jacobian(const Params& p, const Vec& y, double rod, double boron, double bias);
+Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double bias, double load = 1.0);
+Mat jacobian(const Params& p, const Vec& y, double rod, double boron, double bias, double load = 1.0);
 Vec equilibrium_state(const Params& p, double power);
 
 class Reactor {
@@ -104,7 +126,7 @@ public:
 
     void reset(double power, double rod, double boron);
     void set_state(const Vec& y, double rod, double boron, double bias, double time);
-    void advance(double duration, double rod_command, double boron_command);
+    void advance(double duration, double rod_command, double boron_command, double load = -1.0);
     void set_rod_worth_table(const std::vector<double>& table);
 
     const Params& params() const { return params_; }
@@ -115,6 +137,9 @@ public:
     double bias() const { return bias_; }
     double time() const { return time_; }
     double peak_power() const { return peak_power_; }
+    double load() const { return load_; }
+    double steam_power() const;
+    double inlet() const { return inlet_temperature(params_, y_); }
     long newton_failures() const { return newton_failures_; }
 
     Reactivity reactivity_components() const;
@@ -132,6 +157,7 @@ private:
     double bias_ = 0.0;
     double time_ = 0.0;
     double peak_power_ = 1.0;
+    double load_ = 1.0;
     long newton_failures_ = 0;
 };
 

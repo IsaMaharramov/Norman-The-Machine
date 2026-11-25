@@ -63,6 +63,63 @@ class PIDController:
         return np.array([rod_cmd, boron_cmd], dtype=np.float32)
 
 
+def boron_for_rod_band(rod: float, reference: float, band: float, gain: float) -> float:
+    offset = rod - reference
+    if abs(offset) <= band:
+        return 0.0
+    return float(np.clip(-gain * (offset - math.copysign(band, offset)), -1.0, 1.0))
+
+
+def rod_command(d_rho_pcm: float, rod: float, rod_worth_pcm: float, rod_speed: float, interval_s: float) -> float:
+    differential = rod_worth_pcm * (1.0 - math.cos(2.0 * math.pi * rod))
+    differential = max(differential, 0.05 * rod_worth_pcm)
+    return float(np.clip(d_rho_pcm / differential / (rod_speed * interval_s), -1.0, 1.0))
+
+
+@dataclass
+class TavgConfig:
+    tavg_gain: float = 0.5
+    mismatch_gain: float = 0.5
+    temperature_coefficient_pcm: float = 27.5
+    power_coefficient_pcm: float = 1300.0
+    deadband_k: float = 0.8
+    nominal_rise_k: float = 16.0
+    rod_worth_pcm: float = 2500.0
+    rod_speed: float = 1.0 / 180.0
+    interval_s: float = 60.0
+    rod_reference: float = 0.25
+    rod_band: float = 0.03
+    boron_gain: float = 8.0
+
+
+class TavgController:
+    name = "tavg"
+
+    def __init__(self, config: TavgConfig | None = None, boron_control: bool = True):
+        self.cfg = config or TavgConfig()
+        self.boron_control = boron_control
+
+    def reset(self) -> None:
+        pass
+
+    def act(self, obs: np.ndarray) -> np.ndarray:
+        c = self.cfg
+        power = float(obs[OBS["power"]])
+        load = float(obs[OBS["target_next"]])
+        rod = float(obs[OBS["rod_insertion"]])
+        tavg_dev = 10.0 * float(obs[OBS["coolant_temp_dev_10K"]])
+        error = c.nominal_rise_k * (load - 1.0) - tavg_dev
+        if abs(error) < c.deadband_k:
+            error = 0.0
+        d_rho = (c.tavg_gain * c.temperature_coefficient_pcm * error
+                 + c.mismatch_gain * c.power_coefficient_pcm * (load - power))
+        rod_cmd = rod_command(d_rho, rod, c.rod_worth_pcm, c.rod_speed, c.interval_s)
+        boron_cmd = 0.0
+        if self.boron_control:
+            boron_cmd = boron_for_rod_band(rod, c.rod_reference, c.rod_band, c.boron_gain)
+        return np.array([rod_cmd, boron_cmd], dtype=np.float32)
+
+
 class HoldController:
     name = "hold"
 

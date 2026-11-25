@@ -14,6 +14,7 @@ from norman.physics.axial import AxialParams
 from norman.physics.backend import make_reactor
 from norman.physics.params import CYCLE_INITIAL_BORON, ReactorParams, cycle_params, sample_cycle
 from norman.physics.plant import AxialPlant
+from norman.physics.water import saturation_pressure
 
 PREVIEW_MINUTES = (1, 15, 30, 60)
 OBS_NAMES = (
@@ -24,6 +25,7 @@ OBS_NAMES = (
 OBS = {name: i for i, name in enumerate(OBS_NAMES)}
 AXIAL_OBS_NAMES = ("axial_offset_10pct", "delta_i_error_band", "xenon_axial_offset_10pct", "peaking_excess")
 AXIAL_OBS = {name: len(OBS_NAMES) + i for i, name in enumerate(AXIAL_OBS_NAMES)}
+SECONDARY_OBS_NAMES = ("electric_output", "tavg_error_5K", "steam_pressure_dev_MPa", "cold_leg_dev_10K")
 
 
 class LoadFollowEnv(gym.Env):
@@ -49,6 +51,8 @@ class LoadFollowEnv(gym.Env):
         core: str = "point",
         axial: AxialParams | None = None,
         coupling_interval: float = 5.0,
+        secondary: bool = False,
+        tavg_weight: float = 0.2,
     ):
         super().__init__()
         self.scenario = scenario
@@ -72,6 +76,8 @@ class LoadFollowEnv(gym.Env):
         self.core = core
         self.axial = axial or AxialParams()
         self.coupling_interval = coupling_interval
+        self.secondary = secondary
+        self.tavg_weight = tavg_weight
 
         n_act = 2 if boron_control else 1
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_act,), dtype=np.float32)
@@ -97,13 +103,27 @@ class LoadFollowEnv(gym.Env):
             params = self.base_params or cycle_params(self.cycle_name)
             if boron is None:
                 boron = CYCLE_INITIAL_BORON.get(self.cycle_name, 650.0)
+        if self.secondary:
+            params = params.replace(secondary=True)
         if self.core == "axial":
             return AxialPlant(params, self.axial, self.backend, self.coupling_interval), boron
         return make_reactor(params, self.backend), boron
 
     @property
     def observation_names(self) -> tuple:
-        return OBS_NAMES + (AXIAL_OBS_NAMES if self.core == "axial" else ())
+        return (OBS_NAMES + (AXIAL_OBS_NAMES if self.core == "axial" else ())
+                + (SECONDARY_OBS_NAMES if self.secondary else ()))
+
+    def _electric(self, reactor) -> float:
+        return float(reactor.steam_power) if self.secondary else float(reactor.power)
+
+    def _steam_pressure(self, reactor) -> float | None:
+        if not self.secondary:
+            return None
+        return saturation_pressure(float(reactor.state[model.TS]))
+
+    def _tavg_error(self, reactor) -> float:
+        return float(reactor.state[model.TC] - reactor.params.tavg_reference(reactor.load))
 
     def _delta_i_error(self, reactor) -> float | None:
         if self.core != "axial":
@@ -116,6 +136,7 @@ class LoadFollowEnv(gym.Env):
             self.limits, peak_power=reactor.peak_power, power=float(y[model.N]),
             previous_power=previous_power, minutes=self.minutes_per_step,
             fuel_temperature=float(y[model.TF]), delta_i_error=self._delta_i_error(reactor),
+            steam_pressure=self._steam_pressure(reactor),
         )
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
@@ -173,6 +194,14 @@ class LoadFollowEnv(gym.Env):
                 r.peaking - 1.0,
             ], dtype=np.float32)
             obs = np.concatenate([obs, axial])
+        if self.secondary:
+            plant = np.array([
+                self._electric(r),
+                self._tavg_error(r) / 5.0,
+                self._steam_pressure(r) - p.steam_pressure_full,
+                (r.inlet_temperature - p.t_inlet) / 10.0,
+            ], dtype=np.float32)
+            obs = np.concatenate([obs, plant])
         return obs
 
     def _commands(self, action) -> tuple[float, float]:
@@ -184,31 +213,34 @@ class LoadFollowEnv(gym.Env):
     def peek(self, action) -> dict:
         clone = self.reactor.copy()
         rod_cmd, boron_cmd = self._commands(action)
-        clone.advance(self.control_interval, rod_cmd, boron_cmd)
+        clone.advance(self.control_interval, rod_cmd, boron_cmd, self._load(1))
         y = clone.state
         violations = self._violations(clone, self.reactor.power)
         return {
             "power": float(y[model.N]),
             "peak_power": float(clone.peak_power),
-            "error": float(y[model.N] - self.target(1)),
+            "error": float(self._electric(clone) - self.target(1)),
             "violations": violations,
             "trip": safety.is_trip(self.limits, clone.peak_power),
         }
+
+    def _load(self, offset: int) -> float | None:
+        return self.target(offset) if self.secondary else None
 
     def step(self, action):
         if self._tripped:
             raise RuntimeError("the reactor has tripped; call reset()")
         rod_cmd, boron_cmd = self._commands(action)
         self._prev_power = self.reactor.power
-        self.reactor.advance(self.control_interval, rod_cmd, boron_cmd)
+        self.reactor.advance(self.control_interval, rod_cmd, boron_cmd, self._load(1))
         self.t += 1
 
-        y = self.reactor.state
-        power = float(y[model.N])
-        error = power - self.target()
+        error = self._electric(self.reactor) - self.target()
         violations = self._violations(self.reactor, self._prev_power)
         cost = 1.0 if any(violations.values()) else 0.0
         reward = -min((error / self.error_scale) ** 2, 1.0)
+        if self.secondary:
+            reward -= self.tavg_weight * min((self._tavg_error(self.reactor) / 5.0) ** 2, 1.0)
         reward -= self.actuator_penalty * (abs(rod_cmd) + abs(boron_cmd))
 
         trip = safety.is_trip(self.limits, self.reactor.peak_power)
@@ -259,6 +291,14 @@ class LoadFollowEnv(gym.Env):
                 "shape": [float(v) for v in r.shape],
                 "xenon_profile": [float(v) for v in r.core.xenon],
             })
+        if self.secondary:
+            snap.update({
+                "electric": self._electric(r),
+                "tavg_error": self._tavg_error(r),
+                "steam_pressure": self._steam_pressure(r),
+                "t_cold": float(r.inlet_temperature),
+                "t_hot": float(y[model.TH]),
+            })
         return snap
 
     def _info(self, cost, violations, trip) -> dict:
@@ -269,10 +309,12 @@ class LoadFollowEnv(gym.Env):
             "trip": bool(trip),
             "power": float(r.power),
             "target": self.target(),
-            "error": float(r.power - self.target()),
+            "error": float(self._electric(r) - self.target()),
             "cycle": self.cycle_name,
             "rod": float(r.rod),
             "boron": float(r.boron),
             **({"axial_offset": float(r.axial_offset), "delta_i_error": self._delta_i_error(r)}
                if self.core == "axial" else {}),
+            **({"electric": self._electric(r), "tavg_error": self._tavg_error(r),
+                "steam_pressure": self._steam_pressure(r)} if self.secondary else {}),
         }

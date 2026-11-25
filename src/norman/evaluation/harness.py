@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import time
 
-from norman.control.pid import HoldController, PIDController
+from norman.control.pid import HoldController, PIDController, TavgController
 from norman.control.shield import SafetyShield
 from norman.envs.load_follow import LoadFollowEnv
 from norman.evaluation.metrics import aggregate, episode_metrics
@@ -14,6 +14,8 @@ CYCLES = ("BOC", "MOC", "EOC")
 def make_controller(name: str, checkpoint: str | None = None, boron_control: bool = True):
     if name == "pid":
         return PIDController(boron_control=boron_control)
+    if name == "tavg":
+        return TavgController(boron_control=boron_control)
     if name == "hold":
         return HoldController()
     if name == "sac":
@@ -48,19 +50,21 @@ def run_episode(env, controller, seed: int):
 
 def evaluate(controller_name: str, scenarios, cycles, seeds, shield: bool = False,
              checkpoint: str | None = None, backend: str = "auto", hours: float = 24.0,
-             boron_control: bool = True, verbose: bool = True, core: str = "point") -> list[dict]:
+             boron_control: bool = True, verbose: bool = True, core: str = "point",
+             secondary: bool = False) -> list[dict]:
     rows = []
     controller = make_controller(controller_name, checkpoint, boron_control)
     for scenario in scenarios:
         for cycle in cycles:
             env = LoadFollowEnv(scenario=scenario, cycle=cycle, backend=backend, hours=hours,
-                                boron_control=boron_control, core=core)
+                                boron_control=boron_control, core=core, secondary=secondary)
             if shield:
                 env = SafetyShield(env)
             for seed in seeds:
                 start = time.perf_counter()
                 _, m = run_episode(env, controller, seed)
-                row = {"scenario": scenario, "cycle": cycle, "seed": seed, "core": core, **m,
+                row = {"scenario": scenario, "cycle": cycle, "seed": seed, "core": core,
+                       "secondary": secondary, **m,
                        "wall_s": time.perf_counter() - start}
                 rows.append(row)
                 if verbose:
@@ -74,8 +78,12 @@ def markdown_table(name: str, rows: list[dict]) -> str:
     head = (f"| {name} | RMSE % | max err % | within 1% | energy deficit MWh | rod strokes | "
             "dilution ppm | boration ppm | cost steps | trips |")
     rule = "|---|---|---|---|---|---|---|---|---|---|"
+    plant = "tavg_rms_k" in rows[0]
     if axial:
         head += " dI rms % | dI violations | max Fz |"
+        rule += "---|---|---|"
+    if plant:
+        head += " Tavg rms K | Tavg max K | steam MPa |"
         rule += "---|---|---|"
     lines = [head, rule]
     for scenario in dict.fromkeys(r["scenario"] for r in rows):
@@ -92,5 +100,11 @@ def markdown_table(name: str, rows: list[dict]) -> str:
             viol = sum(r["viol_axial_offset"] for r in subset) / len(subset)
             fz = max(r["max_peaking"] for r in subset)
             line += f" {dev:.2f} | {viol:.1f} | {fz:.2f} |"
+        if plant:
+            rms = sum(r["tavg_rms_k"] for r in subset) / len(subset)
+            peak = max(r["tavg_max_k"] for r in subset)
+            low = min(r["steam_pressure_min"] for r in subset)
+            high = max(r["steam_pressure_max"] for r in subset)
+            line += f" {rms:.2f} | {peak:.1f} | {low:.2f}-{high:.2f} |"
         lines.append(line)
     return "\n".join(lines)

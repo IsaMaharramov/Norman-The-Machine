@@ -49,7 +49,10 @@ chains, an S-curve control bank and soluble boron, integrated by an L-stable
 second-order SDIRK scheme. An optional one-dimensional axial core, coupled
 quasi-statically through a one-group diffusion eigenvalue problem, reproduces axial
 xenon oscillations with periods of 24.7--26.0\,h and an S-shaped
-integral rod worth that emerges from the flux shape rather than being prescribed.
+integral rod worth that emerges from the flux shape rather than being prescribed. An
+optional secondary side, with steam generators, a pressure-limited turbine and steam
+properties from IAPWS-IF97, makes the reactor follow the turbine through moderator
+feedback, as a real PWR does.
 Every numerical component is verified against analytic results: the inhour equation
 (error below 0.10\%), the closed-form xenon transient after shutdown (below
 0.01\%), and the second-order convergence of the eigenvalue (observed
@@ -61,7 +64,9 @@ learned controller (5 of 36 benchmark days without it,
 0 with it) but does not make it competitive with the classical
 baseline. On the axial task, the classical controller tracks power to within
 0.61\% RMS yet violates the axial-offset band in 39\% of all
-minutes, leaving a clear and physically meaningful gap for advanced controllers.
+minutes, leaving a clear and physically meaningful gap for advanced controllers. On
+the plant task, controlling reactor power lets the average coolant temperature drift
+50\,K off its program, while a temperature controller holds it within 1\,K.
 \end{abstract}
 
 \section{Introduction}
@@ -98,7 +103,8 @@ model, which reactor engineers will judge first, is rarely established.
 properties:
 \begin{itemize}
   \item A documented reduced-order PWR model (\cref{sec:model}) with an optional
-  quasi-static axial core (\cref{sec:axial}). Every parameter has a stated source.
+  quasi-static axial core (\cref{sec:axial}) and an optional secondary side
+  (\cref{sec:secondary}). Every parameter has a stated source.
   \item A verification suite (\cref{sec:verification}) that compares each numerical
   component against analytic results and against an independent implementation that
   shares no numerical method with the production solver.
@@ -353,6 +359,59 @@ flux brings it closer to instability. Both are model parameters.
   \label{fig:oscillation}
 \end{figure}
 
+\section{Steam generators and turbine}\label{sec:secondary}
+
+In the point and axial tasks the grid demand is handed to the reactor as a power
+set-point. A real PWR works differently: the grid sets the turbine, the turbine draws
+steam from the steam generators, and the reactor follows the cooler or warmer water
+returning to the core through its negative temperature coefficients. The optional
+secondary side reproduces this chain.
+
+\subsection{Loop equations}
+
+Four states are added: the hot leg $T_h$, the steam-generator primary side $T_p$, the
+cold leg $T_{cl}$ and the secondary saturation temperature $T_s$. The core inlet becomes
+$T_{cl}$, and the core outlet is $2T_c - T_{cl}$:
+\begin{align}
+  \tau_h \frac{\dd T_h}{\dd t} &= 2T_c - T_{cl} - T_h,
+  \qquad \tau_{cl} \frac{\dd T_{cl}}{\dd t} = T_p - T_{cl}, \\
+  C_p \frac{\dd T_p}{\dd t} &= \dot m c_p\,(T_h - T_p) - UA\,(T_p - T_s), \\
+  C_s \frac{\dd T_s}{\dd t} &= UA\,(T_p - T_s) - P_0\,\min\!\left(L,\; v_{max}\frac{p_{sat}(T_s)}{p_{sat}(T_{s,0})}\right).
+\end{align}
+The turbine governor opens its valves to draw the demanded load $L$, but at most to
+$v_{max} = 1.05$ times the full-load opening, and flow through the open valves is
+proportional to steam pressure. When steam pressure sags, the turbine therefore cannot
+deliver its load. The saturation pressure $p_{sat}$ follows the IAPWS-IF97 region-4
+equation~\cite{wagner2000}.
+
+\subsection{Temperature program and sliding pressure}
+
+At equilibrium the average coolant temperature follows the linear program
+$T_{ref}(P) = T_{in,0} + 16\,\mathrm{K}\times P$. That is the same core temperature as
+the fixed-inlet model, so the point and axial tasks are unchanged by construction. The
+cold leg then stays at 292\,$^\circ$C at every load, and the conductance
+$UA = P_0/(T_{cl} - T_{s,0})$ places the full-load saturation temperature at
+285\,$^\circ$C. Steam pressure therefore slides from 7.66\,MPa at no load to
+6.91\,MPa at full load, the familiar values of a four-loop plant. They are outputs of
+the equations, not inputs.
+
+\subsection{Self-regulation}
+
+With rods and boron frozen, a load increase cools the steam generator, the cold leg
+and the core, and the negative coefficients raise reactor power until it matches the
+turbine. The new equilibrium satisfies
+$\alpha_f \Delta T_f + \alpha_m \Delta T_c = 0$ with
+$\Delta T_f = \Delta T_c + (T_{f,0} - T_{c,0})\,\Delta P$, so
+\begin{equation}
+  \Delta T_c = -\frac{\alpha_f\,(T_{f,0} - T_{c,0})}{\alpha_f + \alpha_m}\,\Delta P .
+  \label{eq:selfreg}
+\end{equation}
+The simulator reproduces \cref{eq:selfreg} to $10^{-4}$\,K after an 80\% to 85\% load
+step. For a larger step, from 90\% to 100\%, the coolant cools so much that steam
+pressure falls to 6.45\,MPa, the turbine valves open fully, and the plant settles at
+98.8\% of the demanded load. This is why PWRs control the average coolant
+temperature rather than leaving the reactor to self-regulate.
+
 \section{Numerical methods and verification}\label{sec:verification}
 
 \subsection{Time integration}
@@ -416,6 +475,11 @@ continuous-integration suite.
     Coupling convergence in $\Delta t_c$ & finer interval & first order \\
     Rod worth table, C++ vs.\ Python & independent solver & $<10^{-12}$ \\
     Emergent total rod worth & design worth $W$ & 2501\pcm \\
+    IF97 saturation pressure & standard's verification table & $<10^{-8}$ \\
+    Plant steady state on the $T_{avg}$ program & exact & $<10^{-8}$ \\
+    Core, steam generator and turbine energy balance & exact & $<10^{-9}$ \\
+    Self-regulation after a load step & \cref{eq:selfreg} & $10^{-4}$\,K \\
+    Plant C++ vs.\ Radau, 30\,min random load & independent solver & $<10^{-4}$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -503,10 +567,19 @@ where $k$ is the number of remaining steps.
     Ramp rate & $|\Delta P| > 5\%$ of rated per minute & manoeuvrability limit~\cite{eur} \\
     Fuel temperature & average fuel $>690\,^\circ$C & fuel thermal margin \\
     Axial offset (axial task) & $|\Delta I - \Delta I_{target}| > 5\%$ & power-distribution margin \\
+    Steam pressure (plant task) & outside 5.5--8.0\,MPa & turbine supply, relief valves \\
     Trip (terminal) & peak power $>109\%$ & reactor protection \\
     \bottomrule
   \end{tabular}
 \end{table}
+
+\subsection{Plant task}
+
+With the secondary side enabled, the demand drives the turbine and the tracking error
+is measured on turbine output. The observation gains the turbine output, the deviation
+$T_{avg} - T_{ref}$, the steam pressure and the cold-leg temperature, and the reward
+adds $-0.2\min\{(\Delta T_{avg}/5\,\mathrm{K})^2, 1\}$. The plant and axial options
+combine.
 
 \subsection{Scenarios and protocol}
 
@@ -537,6 +610,13 @@ differential worth, $\Delta z = \Delta\rho / W(1 - \cos 2\pi z)$, with a deadban
 limit rod wear. A slow boron loop returns the rods to a reference band:
 $u_B = -k_B\,(z - z_{ref} \mp z_{band})$ outside the band. The controller ignores the
 axial power distribution.
+
+\paragraph{Temperature controller.} For the plant task, a controller in the style of
+PWR rod control acts on the temperature error $e_T = T_{ref}(L) - T_{avg}$ and on the
+power mismatch $L - P$ between turbine and reactor. It requests
+$\Delta\rho = k_T\,\bar\alpha_T\,e_T + k_P\,\bar\alpha_P\,(L - P)$, with a 0.8\,K deadband
+on $e_T$, converts the request into a rod displacement exactly as the PID does, and uses
+the same boron loop to keep the bank in its band.
 
 \paragraph{Soft Actor-Critic (SAC).} A model-free agent with a tanh-squashed Gaussian
 policy, twin critics and automatic entropy tuning~\cite{haarnoja2018}. It is trained
@@ -595,6 +675,7 @@ Rod insertion during the power reduction pushes power toward the bottom, and xen
 accumulates in the lower half. Once the rods are withdrawn, the power swings to the top
 of the core. Following load while holding the power distribution is therefore the
 central open problem the benchmark poses.
+
 
 \begin{table}[!htbp]
   \centering
@@ -678,6 +759,60 @@ Hold & EUR daily & 28.87 & 0.00 & 0 & 1.56 & 0/9 \\
   \label{fig:axial-episode}
 \end{figure}
 
+\paragraph{Plant task.} \Cref{tab:results-plant} reports the plant task. With the
+turbine in the loop, every controller delivers the demanded electrical power on most
+scenarios, because the reactor self-regulates. Even holding the rods still tracks the
+grid to within 0.01\% on three scenarios. The difference lies in what happens to the
+plant meanwhile (\cref{fig:plant}). A controller that drives reactor power to the
+demand, the natural strategy on the point task, leaves the temperature unanchored:
+$T_{avg}$ drifts up to 50\,K off its program, and steam pressure swings between 3.3 and
+9.6\,MPa. A temperature controller holds $T_{avg}$ within 1\,K and steam pressure inside
+its limits on three scenarios. The remaining difficulty is again the fast return to
+power: steam pressure sags to 6.2\,MPa, the turbine valves open fully and $T_{avg}$
+falls by up to 8\,K before the rods catch up.
+
+\begin{table}[!htbp]
+  \centering
+  \caption{Plant task. $T_{avg}$ is the deviation from its program; steam pressure is
+  the range over the nine days of each scenario.}
+  \label{tab:results-plant}
+  \footnotesize
+  \begin{tabular}{@{}llrrrrr@{}}
+    \toprule
+    Controller & Scenario & Output RMSE [\%] & $T_{avg}$ RMS [K] & $T_{avg}$ max [K] & Steam [MPa] & Cost \\
+    \midrule
+    Temperature & EUR daily & 0.00 & 0.46 & 1.0 & 6.91--7.37 & 0.0 \\
+     & Fast ramp & 0.21 & 0.82 & 8.3 & 6.21--7.43 & 12.7 \\
+     & Duck curve & 0.00 & 0.52 & 1.0 & 6.83--7.35 & 0.0 \\
+     & Frequency & 0.00 & 0.42 & 0.8 & 6.85--7.09 & 0.0 \\
+    \midrule
+    Temperature & EUR daily & 0.00 & 0.46 & 1.0 & 6.91--7.37 & 0.0 \\
+    + shield & Fast ramp & 0.47 & 1.14 & 15.3 & 5.66--7.98 & 1.7 \\
+     & Duck curve & 0.00 & 0.52 & 1.0 & 6.83--7.35 & 0.0 \\
+     & Frequency & 0.00 & 0.42 & 0.8 & 6.85--7.09 & 0.0 \\
+    \midrule
+    Power (PID) & EUR daily & 0.04 & 24.20 & 49.7 & 3.28--9.61 & 550.0 \\
+     & Fast ramp & 3.34 & 16.78 & 46.5 & 3.46--8.34 & 587.7 \\
+     & Duck curve & 0.01 & 11.45 & 27.2 & 4.79--7.99 & 272.8 \\
+     & Frequency & 0.04 & 4.20 & 12.3 & 5.81--7.51 & 0.0 \\
+    \midrule
+    Hold & EUR daily & 0.00 & 7.36 & 30.6 & 4.53--8.14 & 153.7 \\
+     & Fast ramp & 5.57 & 10.49 & 44.0 & 3.95--11.27 & 402.3 \\
+     & Duck curve & 0.00 & 7.15 & 29.3 & 4.56--9.58 & 228.0 \\
+     & Frequency & 0.01 & 1.50 & 6.0 & 6.38--7.64 & 0.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{plant_fast_ramp.pdf}
+  \caption{Plant task, fast ramp, MOC. Top: grid demand, reactor power and turbine
+  output under temperature control. Middle and bottom: deviation of $T_{avg}$ from its
+  program and steam pressure, for temperature control and for power control.}
+  \label{fig:plant}
+\end{figure}
+
 \section{Limitations}\label{sec:limitations}
 
 \Norman{} is a research benchmark. It is not a safety-analysis code, and it has not
@@ -687,12 +822,13 @@ been validated against plant data. Its main simplifications are:
   \item a single lumped rod bank, with burnup represented by a linear axial tilt;
   \item a quasi-static shape with first-order coupling every 5\,s, which is accurate for
   xenon- and rod-driven changes but not for sub-second spatial transients;
-  \item a fixed core inlet temperature, with no steam generator or turbine;
+  \item a lumped secondary side, with one steam-generator node for four loops, no level
+  dynamics and no pressurizer;
   \item boron that acts instantly in the core;
   \item representative rather than plant-specific parameters.
 \end{itemize}
-The secondary side, a model-predictive baseline and constrained reinforcement learning
-baselines are under development in the same repository.
+A model-predictive baseline and constrained reinforcement learning baselines are under
+development in the same repository.
 
 \section{Conclusion}
 

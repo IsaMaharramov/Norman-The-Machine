@@ -86,6 +86,7 @@ AxialCore::AxialCore(const Params& params, const AxialParams& axial) : params_(p
     promethium_.assign(n, 1.0);
     samarium_.assign(n, 1.0);
     rho_local_.assign(n, 0.0);
+    inlet_ = params_.t_inlet;
 }
 
 void AxialCore::build_leakage() {
@@ -144,7 +145,7 @@ void AxialCore::quasi_steady_temperatures(double coolant_power, double fuel_powe
     const int n = axial_.nodes;
     const double flow = params_.coolant_flow_capacity();
     const double conductance = params_.fuel_to_coolant_conductance() / n;
-    double t_in = params_.t_inlet;
+    double t_in = inlet_;
     for (int i = 0; i < n; ++i) {
         const double node = shape_[i] * params_.rated_power / n;
         const double t_out = t_in + coolant_power * node / flow;
@@ -226,6 +227,7 @@ double AxialCore::iterate_shape(double power, double rod, double boron, bool equ
 
 void AxialCore::initialize(double power, double rod, double boron) {
     if (!(power > 0.0)) throw std::invalid_argument("initial power must be positive");
+    inlet_ = params_.t_inlet;
     bias_ = 0.0;
     double t0 = 0.0, t1 = 0.01;
     tilt_ = t0;
@@ -247,7 +249,9 @@ void AxialCore::initialize(double power, double rod, double boron) {
     reactivity_ = iterate_shape(power, rod, boron, true, true, power, power);
 }
 
-double AxialCore::update(double power, double rod, double boron, double coolant_power, double fuel_power) {
+double AxialCore::update(double power, double rod, double boron, double coolant_power, double fuel_power,
+                         double inlet) {
+    inlet_ = inlet < 0.0 ? params_.t_inlet : inlet;
     if (coolant_power < 0.0) coolant_power = power;
     if (fuel_power < 0.0) fuel_power = power;
     reactivity_ = iterate_shape(power, rod, boron, false, false, coolant_power, fuel_power);

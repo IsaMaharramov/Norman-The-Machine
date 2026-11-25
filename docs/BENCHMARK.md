@@ -6,9 +6,9 @@ boron, while the plant fights back with temperature feedback and xenon poisoning
 
 ## Episode
 
-- **Control interval:** 60 s of plant time per `step()` (`control_interval`).
-- **Horizon:** 24 h = 1440 steps (`hours`).
-- **Initial state:** exact equilibrium at the profile's first power level: precursors,
+- Control interval: 60 s of plant time per `step()` (`control_interval`).
+- Horizon: 24 h = 1440 steps (`hours`).
+- Initial state: exact equilibrium at the profile's first power level: precursors,
   temperatures, iodine, xenon and samarium at steady state, rods at 25% insertion,
   boron at the cycle's critical concentration.
 
@@ -70,6 +70,32 @@ toward the bottom. Boron changes reactivity uniformly. Following load while hold
 ΔI in band therefore means using the rods for shape and boron for power, while
 anticipating the xenon redistribution that arrives hours later.
 
+## Plant task: `Norman/PlantLoadFollow-v1`
+
+The steam generators and turbine are modelled (`secondary=True`, see
+[MODEL.md](MODEL.md#steam-generators-and-turbine-secondarytrue)). Grid demand drives
+the turbine, and the reactor follows through temperature feedback. The tracking
+error is therefore measured on turbine output. The controller's real task is
+holding the average coolant temperature on its program,
+$T_{ref} = 292 + 16\,P$ °C, while keeping steam pressure inside its limits.
+
+The observation gains four entries (after the axial ones if both are enabled):
+
+| Name | Definition |
+|---|---|
+| `electric_output` | turbine output, fraction of rated |
+| `tavg_error_5K` | $(T_{avg} - T_{ref})$ in units of 5 K |
+| `steam_pressure_dev_MPa` | steam pressure minus its full-load value (6.91 MPa) |
+| `cold_leg_dev_10K` | $(T_{cl} - 292)$ in units of 10 K |
+
+The reward adds $-0.2\min((\Delta T_{avg}/5\,\text{K})^2, 1)$, and a `steam_pressure`
+violation is counted outside 5.5–8.0 MPa. Combine with the axial core through
+`core="axial", secondary=True`.
+
+```bash
+norman evaluate --plant --controller tavg --out results/plant_tavg.json
+```
+
 ## Reward and cost
 
 Reward per step:
@@ -84,12 +110,13 @@ Cost per step (`info["cost"]`) is 1 if any operating limit was broken during the
 | `ramp_rate` | \|ΔP\| > 5% of rated per minute | EUR manoeuvrability limit |
 | `fuel_temperature` | average fuel > 690 °C | fuel thermal margin |
 | `axial_offset` | \|ΔI − ΔI target\| > 5% of rated (axial task only) | power-shape margin |
+| `steam_pressure` | outside 5.5–8.0 MPa (plant task only) | turbine supply / relief valves |
 
 Each violation type is also reported in `info["violations"]`, so you can use this
 task with constrained-RL methods (Lagrangian SAC/PPO, CPO, safety layers) the same way
 as Safety-Gymnasium tasks.
 
-**Reactor trip.** If peak power inside a step exceeds 109%, the reactor scrams and the
+Reactor trip. If peak power inside a step exceeds 109%, the reactor scrams and the
 episode terminates. The trip reward equals the discounted value of losing every
 remaining step, $-(1-\gamma^{k})/(1-\gamma)$ with $\gamma = 0.99$. A controller
 therefore cannot raise its return by tripping early.
@@ -106,8 +133,8 @@ therefore cannot raise its return by tripping early.
 
 ## Evaluation protocol
 
-A leaderboard entry is the mean over **4 scenarios × 3 cycle states (BOC, MOC, EOC) ×
-seeds {0, 1, 2}** = 36 episodes:
+A leaderboard entry is the mean over 4 scenarios × 3 cycle states (BOC, MOC, EOC) ×
+seeds {0, 1, 2} = 36 episodes:
 
 ```bash
 norman evaluate --controller <name> --out results/<name>.json

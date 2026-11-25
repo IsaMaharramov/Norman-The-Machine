@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from norman.physics.water import saturation_pressure
+
 PCM = 1e-5
 
 KEEPIN_U235_FRACTIONS = (0.033, 0.219, 0.196, 0.395, 0.115, 0.042)
@@ -50,6 +52,25 @@ class ReactorParams:
 
     substep: float = 0.25
     rod_worth_table: tuple = ()
+
+    secondary: bool = False
+    hot_leg_time: float = 2.0
+    cold_leg_time: float = 3.0
+    sg_primary_capacity: float = 7.0e8
+    sg_secondary_capacity: float = 2.0e9
+    t_saturation_full: float = 285.0
+    turbine_valve_max: float = 1.05
+
+    @property
+    def sg_conductance(self) -> float:
+        return self.rated_power / (self.t_inlet - self.t_saturation_full)
+
+    @property
+    def steam_pressure_full(self) -> float:
+        return saturation_pressure(self.t_saturation_full)
+
+    def tavg_reference(self, load: float) -> float:
+        return self.t_inlet + (self.t_coolant_nominal - self.t_inlet) * load
 
     @property
     def betas(self) -> np.ndarray:
@@ -117,9 +138,13 @@ class ReactorParams:
             raise ValueError("delayed-neutron group fractions must sum to 1")
         if self.t_fuel_nominal <= self.t_coolant_nominal <= self.t_inlet:
             raise ValueError("nominal temperatures must satisfy T_fuel > T_coolant > T_inlet")
+        if self.t_saturation_full >= self.t_inlet:
+            raise ValueError("full-load saturation temperature must be below the cold-leg temperature")
         positive = (
             "beta", "generation_time", "rated_power", "fuel_heat_capacity",
             "coolant_heat_capacity", "rod_speed_max", "boron_rate_max", "substep",
+            "hot_leg_time", "cold_leg_time", "sg_primary_capacity", "sg_secondary_capacity",
+            "turbine_valve_max",
         )
         for name in positive:
             if getattr(self, name) <= 0:

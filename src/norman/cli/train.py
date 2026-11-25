@@ -30,6 +30,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--cycle", default="random")
     ap.add_argument("--hours", type=float, default=24.0)
     ap.add_argument("--core", default="point", choices=["point", "axial"])
+    ap.add_argument("--plant", action="store_true", help="model the steam generators and turbine")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-every", type=int, default=10)
     ap.add_argument("--warmup-steps", type=int, default=5000)
@@ -48,8 +49,8 @@ def main(args: argparse.Namespace) -> None:
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
 
-    env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours, randomize=True, core=args.core,
-                        observation_noise=0.002)
+    env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours, randomize=True,
+                        core=args.core, secondary=args.plant, observation_noise=0.002)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
     cfg = SACConfig(batch_size=args.batch_size, warmup_steps=args.warmup_steps)

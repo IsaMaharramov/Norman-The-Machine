@@ -40,6 +40,45 @@ bool solve_linear(Mat a, Vec& b) {
 
 }
 
+double saturation_pressure(double t_celsius) {
+    static const double n[10] = {0.11670521452767e4,  -0.72421316703206e6, -0.17073846940092e2,
+                                 0.12020824702470e5,  -0.32325550322333e7, 0.14915108613530e2,
+                                 -0.48232657361591e4, 0.40511340542057e6,  -0.23855557567849,
+                                 0.65017534844798e3};
+    const double t = t_celsius + 273.15;
+    const double theta = t + n[8] / (t - n[9]);
+    const double a = theta * theta + n[0] * theta + n[1];
+    const double b = n[2] * theta * theta + n[3] * theta + n[4];
+    const double c = n[5] * theta * theta + n[6] * theta + n[7];
+    const double x = 2.0 * c / (-b + std::sqrt(b * b - 4.0 * a * c));
+    return x * x * x * x;
+}
+
+double Params::sg_conductance() const { return rated_power / (t_inlet - t_saturation_full); }
+
+double Params::steam_pressure_full() const { return saturation_pressure(t_saturation_full); }
+
+double Params::tavg_reference(double load) const { return t_inlet + (t_coolant_nominal - t_inlet) * load; }
+
+double inlet_temperature(const Params& p, const Vec& y) { return p.secondary ? y[kColdLeg] : p.t_inlet; }
+
+double steam_fraction(const Params& p, double t_saturation, double load) {
+    const double available = p.turbine_valve_max * saturation_pressure(t_saturation) / p.steam_pressure_full();
+    return std::min(load, available);
+}
+
+namespace {
+
+double steam_fraction_slope(const Params& p, double t_saturation, double load) {
+    const double available = p.turbine_valve_max * saturation_pressure(t_saturation) / p.steam_pressure_full();
+    if (load <= available) return 0.0;
+    const double h = 1e-4;
+    const double slope = (saturation_pressure(t_saturation + h) - saturation_pressure(t_saturation - h)) / (2.0 * h);
+    return p.turbine_valve_max * slope / p.steam_pressure_full();
+}
+
+}
+
 double Params::coolant_flow_capacity() const {
     return rated_power / (2.0 * (t_coolant_nominal - t_inlet));
 }
@@ -77,8 +116,12 @@ void Params::validate() const {
     if (!(t_fuel_nominal > t_coolant_nominal && t_coolant_nominal > t_inlet))
         throw std::invalid_argument("nominal temperatures must satisfy T_fuel > T_coolant > T_inlet");
     if (beta <= 0 || generation_time <= 0 || neutron_source < 0 || rated_power <= 0 || fuel_heat_capacity <= 0 ||
-        coolant_heat_capacity <= 0 || rod_speed_max <= 0 || boron_rate_max <= 0 || substep <= 0)
+        coolant_heat_capacity <= 0 || rod_speed_max <= 0 || boron_rate_max <= 0 || substep <= 0 ||
+        hot_leg_time <= 0 || cold_leg_time <= 0 || sg_primary_capacity <= 0 || sg_secondary_capacity <= 0 ||
+        turbine_valve_max <= 0)
         throw std::invalid_argument("physical parameters must be positive");
+    if (!(t_saturation_full < t_inlet))
+        throw std::invalid_argument("full-load saturation temperature must be below the cold-leg temperature");
 }
 
 double Inputs::rod_at(double t) const { return clamp(rod0 + rod_rate * t, 0.0, 1.0); }
@@ -109,7 +152,7 @@ Reactivity reactivity_components(const Params& p, const Vec& y, double rod, doub
     return r;
 }
 
-Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double bias) {
+Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double bias, double load) {
     const double lam = p.generation_time;
     const double n = y[kPower];
     const double rho = reactivity_components(p, y, rod, boron, bias).total();
@@ -128,9 +171,10 @@ Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double 
     const double q = p.rated_power * n;
     const double tf = y[kFuelTemp];
     const double tc = y[kCoolantTemp];
+    const double t_in = inlet_temperature(p, y);
     dy[kFuelTemp] = (p.fuel_power_fraction * q - ha * (tf - tc)) / p.fuel_heat_capacity;
     dy[kCoolantTemp] =
-        ((1.0 - p.fuel_power_fraction) * q + ha * (tf - tc) - 2.0 * wc * (tc - p.t_inlet)) /
+        ((1.0 - p.fuel_power_fraction) * q + ha * (tf - tc) - 2.0 * wc * (tc - t_in)) /
         p.coolant_heat_capacity;
 
     dy[kIodine] = p.lambda_iodine * (n - y[kIodine]);
@@ -138,10 +182,19 @@ Vec derivatives(const Params& p, const Vec& y, double rod, double boron, double 
                  (p.lambda_xenon + p.xenon_burn_rate() * n) * y[kXenon];
     dy[kPromethium] = p.lambda_promethium * (n - y[kPromethium]);
     dy[kSamarium] = p.samarium_burn_rate() * (y[kPromethium] - n * y[kSamarium]);
+
+    if (p.secondary) {
+        const double transfer = p.sg_conductance() * (y[kSgPrimary] - y[kSaturation]);
+        dy[kHotLeg] = (2.0 * tc - y[kColdLeg] - y[kHotLeg]) / p.hot_leg_time;
+        dy[kSgPrimary] = (wc * (y[kHotLeg] - y[kSgPrimary]) - transfer) / p.sg_primary_capacity;
+        dy[kColdLeg] = (y[kSgPrimary] - y[kColdLeg]) / p.cold_leg_time;
+        dy[kSaturation] =
+            (transfer - p.rated_power * steam_fraction(p, y[kSaturation], load)) / p.sg_secondary_capacity;
+    }
     return dy;
 }
 
-Mat jacobian(const Params& p, const Vec& y, double rod, double boron, double bias) {
+Mat jacobian(const Params& p, const Vec& y, double rod, double boron, double bias, double load) {
     const double lam = p.generation_time;
     const double n = y[kPower];
     const double rho = reactivity_components(p, y, rod, boron, bias).total();
@@ -179,6 +232,23 @@ Mat jacobian(const Params& p, const Vec& y, double rod, double boron, double bia
     J[kSamarium][kPower] = -p.samarium_burn_rate() * y[kSamarium];
     J[kSamarium][kPromethium] = p.samarium_burn_rate();
     J[kSamarium][kSamarium] = -p.samarium_burn_rate() * n;
+
+    if (p.secondary) {
+        const double ua = p.sg_conductance();
+        const double cp = p.sg_primary_capacity;
+        const double cs = p.sg_secondary_capacity;
+        J[kCoolantTemp][kColdLeg] = 2.0 * wc / cc;
+        J[kHotLeg][kCoolantTemp] = 2.0 / p.hot_leg_time;
+        J[kHotLeg][kColdLeg] = -1.0 / p.hot_leg_time;
+        J[kHotLeg][kHotLeg] = -1.0 / p.hot_leg_time;
+        J[kSgPrimary][kHotLeg] = wc / cp;
+        J[kSgPrimary][kSgPrimary] = -(wc + ua) / cp;
+        J[kSgPrimary][kSaturation] = ua / cp;
+        J[kColdLeg][kSgPrimary] = 1.0 / p.cold_leg_time;
+        J[kColdLeg][kColdLeg] = -1.0 / p.cold_leg_time;
+        J[kSaturation][kSgPrimary] = ua / cs;
+        J[kSaturation][kSaturation] = -(ua + p.rated_power * steam_fraction_slope(p, y[kSaturation], load)) / cs;
+    }
     return J;
 }
 
@@ -187,8 +257,13 @@ Vec equilibrium_state(const Params& p, double power) {
     Vec y{};
     y[kPower] = power;
     for (int i = 0; i < kGroups; ++i) y[kPrecursor + i] = power;
-    const double tc = p.t_inlet + p.rated_power * power / (2.0 * p.coolant_flow_capacity());
+    const double tc = p.tavg_reference(power);
+    const double t_cold = tc - p.rated_power * power / (2.0 * p.coolant_flow_capacity());
     y[kCoolantTemp] = tc;
+    y[kHotLeg] = 2.0 * tc - t_cold;
+    y[kSgPrimary] = t_cold;
+    y[kColdLeg] = t_cold;
+    y[kSaturation] = t_cold - p.rated_power * power / p.sg_conductance();
     y[kFuelTemp] = tc + p.fuel_power_fraction * p.rated_power * power / p.fuel_to_coolant_conductance();
     y[kIodine] = power;
     const double burn = p.xenon_burn_rate();
@@ -211,6 +286,12 @@ void Reactor::reset(double power, double rod, double boron) {
             params_.generation_time * params_.neutron_source / power;
     time_ = 0.0;
     peak_power_ = power;
+    load_ = power;
+}
+
+double Reactor::steam_power() const {
+    if (!params_.secondary) return y_[kPower];
+    return steam_fraction(params_, y_[kSaturation], load_);
 }
 
 void Reactor::set_rod_worth_table(const std::vector<double>& table) {
@@ -234,9 +315,10 @@ Reactivity Reactor::reactivity_components() const {
 bool Reactor::newton(Vec& Y, const Vec& base, double t, double hg, const Inputs& in) const {
     const double rod = in.rod_at(t);
     const double boron = in.boron_at(t);
+    const double load = in.load_at(t);
     for (int iter = 0; iter < 30; ++iter) {
-        const Vec f = derivatives(params_, Y, rod, boron, bias_);
-        const Mat J = jacobian(params_, Y, rod, boron, bias_);
+        const Vec f = derivatives(params_, Y, rod, boron, bias_, load);
+        const Mat J = jacobian(params_, Y, rod, boron, bias_, load);
         Mat A{};
         Vec rhs{};
         for (int r = 0; r < kStateSize; ++r) {
@@ -260,7 +342,8 @@ bool Reactor::sdirk_step(Vec& y, double t, double h, const Inputs& in) const {
     const double g = 1.0 - std::sqrt(2.0) / 2.0;
     Vec y1 = y;
     if (!newton(y1, y, t + g * h, g * h, in)) return false;
-    const Vec k1 = derivatives(params_, y1, in.rod_at(t + g * h), in.boron_at(t + g * h), bias_);
+    const Vec k1 =
+        derivatives(params_, y1, in.rod_at(t + g * h), in.boron_at(t + g * h), bias_, in.load_at(t + g * h));
     Vec base2{};
     for (int r = 0; r < kStateSize; ++r) base2[r] = y[r] + h * (1.0 - g) * k1[r];
     Vec y2 = y1;
@@ -281,7 +364,7 @@ void Reactor::step_adaptive(Vec& y, double t, double h, const Inputs& in, int de
     step_adaptive(y, t + 0.5 * h, 0.5 * h, in, depth + 1);
 }
 
-void Reactor::advance(double duration, double rod_command, double boron_command) {
+void Reactor::advance(double duration, double rod_command, double boron_command, double load) {
     if (!(duration > 0.0)) throw std::invalid_argument("duration must be positive");
     Inputs in;
     in.rod0 = rod_;
@@ -289,6 +372,8 @@ void Reactor::advance(double duration, double rod_command, double boron_command)
     in.boron0 = boron_;
     in.boron_rate = -clamp(boron_command, -1.0, 1.0) * params_.boron_rate_max;
     in.boron_max = params_.boron_max;
+    in.load0 = load_;
+    in.load_rate = load < 0.0 ? 0.0 : (clamp(load, 0.0, 1.2) - load_) / duration;
 
     const int steps = std::max(1, static_cast<int>(std::ceil(duration / params_.substep - 1e-9)));
     const double h = duration / steps;
@@ -299,6 +384,7 @@ void Reactor::advance(double duration, double rod_command, double boron_command)
     }
     rod_ = in.rod_at(duration);
     boron_ = in.boron_at(duration);
+    load_ = in.load_at(duration);
     time_ += duration;
     peak_power_ = peak;
 }

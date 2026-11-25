@@ -37,22 +37,26 @@ class AxialPlant:
 
     def thermal_powers(self) -> tuple[float, float]:
         p, y = self.params, self.point.state
-        coolant = (y[model.TC] - p.t_inlet) / (p.t_coolant_nominal - p.t_inlet)
+        coolant = (y[model.TC] - self.point.inlet_temperature) / (p.t_coolant_nominal - p.t_inlet)
         fuel = (y[model.TF] - y[model.TC]) / (p.t_fuel_nominal - p.t_coolant_nominal)
         return float(coolant), float(fuel)
 
-    def advance(self, duration: float, rod_command: float, boron_command: float) -> None:
+    def advance(self, duration: float, rod_command: float, boron_command: float,
+                load: float | None = None) -> None:
         self._install_rod_worth()
         steps = max(1, math.ceil(duration / self.coupling_interval - 1e-9))
         h = duration / steps
+        load0 = self.point.load
         peak = self.point.power
-        for _ in range(steps):
+        for k in range(steps):
             start = self.point.power
-            self.point.advance(h, rod_command, boron_command)
+            demand = None if load is None else load0 + (load - load0) * (k + 1) / steps
+            self.point.advance(h, rod_command, boron_command, demand)
             peak = max(peak, self.point.peak_power)
             self.core.advance_poisons(h, 0.5 * (start + self.point.power))
             coolant, fuel = self.thermal_powers()
-            self.core.update(self.point.power, self.point.rod, self.point.boron, coolant, fuel)
+            self.core.update(self.point.power, self.point.rod, self.point.boron, coolant, fuel,
+                             self.point.inlet_temperature)
             self._synchronize()
         self._peak_power = peak
 
@@ -83,6 +87,9 @@ class AxialPlant:
     bias = property(lambda self: self.point.bias)
     time = property(lambda self: self.point.time)
     peak_power = property(lambda self: self._peak_power)
+    load = property(lambda self: self.point.load)
+    steam_power = property(lambda self: self.point.steam_power)
+    inlet_temperature = property(lambda self: self.point.inlet_temperature)
     axial_offset = property(lambda self: self.core.axial_offset)
     xenon_axial_offset = property(lambda self: self.core.xenon_axial_offset)
     peaking = property(lambda self: self.core.peaking)

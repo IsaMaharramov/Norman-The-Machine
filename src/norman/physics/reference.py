@@ -23,6 +23,7 @@ class PythonReactor:
         self.bias = 0.0
         self.time = 0.0
         self.peak_power = 1.0
+        self.load = 1.0
         self.reset(1.0, 0.25, 0.0)
 
     def reset(self, power: float, rod: float, boron: float) -> None:
@@ -32,6 +33,7 @@ class PythonReactor:
         self.bias = model.critical_bias(self.params, self.y, self.rod, self.boron)
         self.time = 0.0
         self.peak_power = float(power)
+        self.load = float(power)
 
     def set_rod_worth_table(self, table) -> None:
         self.params = self.params.replace(rod_worth_table=tuple(float(v) for v in table))
@@ -49,6 +51,16 @@ class PythonReactor:
     def power(self) -> float:
         return float(self.y[model.N])
 
+    @property
+    def steam_power(self) -> float:
+        if not self.params.secondary:
+            return self.power
+        return model.steam_fraction(self.params, float(self.y[model.TS]), self.load)
+
+    @property
+    def inlet_temperature(self) -> float:
+        return model.inlet_temperature(self.params, self.y)
+
     def reactivity(self) -> float:
         return model.reactivity(self.params, self.y, self.rod, self.boron, self.bias)
 
@@ -56,7 +68,7 @@ class PythonReactor:
         return model.reactivity_components(self.params, self.y, self.rod, self.boron, self.bias)
 
     def derivatives(self, y, rod: float, boron: float) -> np.ndarray:
-        return model.derivatives(self.params, np.asarray(y, dtype=float), rod, boron, self.bias)
+        return model.derivatives(self.params, np.asarray(y, dtype=float), rod, boron, self.bias, self.load)
 
     def copy(self) -> PythonReactor:
         return copy.deepcopy(self)
@@ -76,24 +88,27 @@ class PythonReactor:
         edges = sorted(cuts)
         return list(zip(edges[:-1], edges[1:], strict=True))
 
-    def advance(self, duration: float, rod_command: float, boron_command: float) -> None:
+    def advance(self, duration: float, rod_command: float, boron_command: float,
+                load: float | None = None) -> None:
         p = self.params
         rod_rate = -float(np.clip(rod_command, -1.0, 1.0)) * p.rod_speed_max
         boron_rate = -float(np.clip(boron_command, -1.0, 1.0)) * p.boron_rate_max
-        rod0, boron0 = self.rod, self.boron
+        rod0, boron0, load0 = self.rod, self.boron, self.load
+        load1 = load0 if load is None else float(np.clip(load, 0.0, 1.2))
+        load_rate = (load1 - load0) / duration
 
         def inputs(t):
             rod = min(max(rod0 + rod_rate * t, 0.0), 1.0)
             boron = min(max(boron0 + boron_rate * t, 0.0), p.boron_max)
-            return rod, boron
+            return rod, boron, load0 + load_rate * t
 
         def f(t, y):
-            rod, boron = inputs(t)
-            return model.derivatives(p, y, rod, boron, self.bias)
+            rod, boron, demand = inputs(t)
+            return model.derivatives(p, y, rod, boron, self.bias, demand)
 
         def jac(t, y):
-            rod, boron = inputs(t)
-            return model.jacobian(p, y, rod, boron, self.bias)
+            rod, boron, demand = inputs(t)
+            return model.jacobian(p, y, rod, boron, self.bias, demand)
 
         y = self.y
         peak = float(y[model.N])
@@ -109,6 +124,6 @@ class PythonReactor:
             y = sol.y[:, -1]
 
         self.y = np.array(y)
-        self.rod, self.boron = inputs(duration)
+        self.rod, self.boron, self.load = inputs(duration)
         self.time += duration
         self.peak_power = peak

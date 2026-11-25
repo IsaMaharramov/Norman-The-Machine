@@ -17,6 +17,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--hours", type=float, default=24.0)
     ap.add_argument("--core", default="point", choices=["point", "axial"])
+    ap.add_argument("--plant", action="store_true", help="model the steam generators and turbine")
     ap.add_argument("--shield", action="store_true")
     ap.add_argument("--rods-only", action="store_true")
     ap.add_argument("--plot", help="save the figure to this path")
@@ -25,7 +26,7 @@ def configure(ap: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     env = LoadFollowEnv(scenario=args.scenario, cycle=args.cycle, hours=args.hours,
-                        boron_control=not args.rods_only, core=args.core)
+                        boron_control=not args.rods_only, core=args.core, secondary=args.plant)
     if args.shield:
         env = SafetyShield(env)
     controller = make_controller(args.controller, args.checkpoint, not args.rods_only)

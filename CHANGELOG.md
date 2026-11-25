@@ -15,6 +15,13 @@
   current flux shape. A convergence study shows first-order accuracy, about 1% of
   power at 5 s.
 - Optional tabulated rod worth in the point model (`rod_worth_table`).
+- Steam generators and turbine (`secondary=True`, `Norman/PlantLoadFollow-v1`): hot
+  leg, steam-generator primary and secondary nodes, cold leg, and a turbine whose
+  output is limited by steam pressure. Steam pressure comes from the IAPWS-IF97
+  saturation line and slides from 7.66 MPa at no load to 6.91 MPa at full load.
+- T_avg program, steam-pressure limits, plant observations and metrics, and a
+  Westinghouse-style T_avg rod controller (`--controller tavg`).
+- `--plant` option for `norman evaluate`, `run` and `train`; plant episode plots.
 - Axial-offset (ΔI band) operating limit, four axial observations, and axial metrics
   (ΔI deviation, peaking, xenon offset swing).
 - `--core axial` option for `norman evaluate`, `run` and `train`; axial episode plots

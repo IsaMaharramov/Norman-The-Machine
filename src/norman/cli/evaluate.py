@@ -21,19 +21,22 @@ def configure(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--backend", default="auto", choices=["auto", "cpp", "python"])
     ap.add_argument("--hours", type=float, default=24.0)
     ap.add_argument("--core", default="point", choices=["point", "axial"])
+    ap.add_argument("--plant", action="store_true", help="model the steam generators and turbine")
     ap.add_argument("--out", help="write per-episode results to this JSON file")
 
 
 def main(args: argparse.Namespace) -> None:
     label = args.controller + ("+shield" if args.shield else "") + (" (axial)" if args.core == "axial" else "")
+    label += " (plant)" if args.plant else ""
     rows = evaluate(args.controller, args.scenarios, args.cycles, args.seeds, args.shield,
-                    args.checkpoint, args.backend, args.hours, not args.rods_only, core=args.core)
+                    args.checkpoint, args.backend, args.hours, not args.rods_only, core=args.core,
+                    secondary=args.plant)
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         meta = {"controller": label, "checkpoint": args.checkpoint, "norman_version": __version__,
                 "python": platform.python_version(), "boron_control": not args.rods_only,
-                "core": args.core}
+                "core": args.core, "secondary": args.plant}
         out.write_text(json.dumps({"meta": meta, "episodes": rows}, indent=2))
     print()
     print(markdown_table(label, rows))

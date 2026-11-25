@@ -2,12 +2,12 @@
 
 Norman simulates a generic 3 GWth four-loop pressurized water reactor (PWR) with a
 reduced-order model: point kinetics for the fast dynamics and, optionally, a 1-D axial
-core for the power shape and xenon redistribution. It is built to be **transparent
-and verifiable**: every
+core for the power shape and xenon redistribution. It is built to be transparent
+and verifiable: every
 equation is listed here, every parameter has a source or a stated rationale, and the
 test suite checks the numerics against analytic solutions.
 
-> **Scope.** This is a control-research model, not a licensing or safety-analysis
+> Scope. This is a control-research model, not a licensing or safety-analysis
 > code. It has been *verified* (the equations are solved correctly) but not
 > *validated* against plant data. Do not use it to make decisions about a real plant.
 
@@ -117,8 +117,8 @@ coefficients, rod worth and generation time by ±10%, to test controller robustn
 
 The point model knows how much power the core makes, not *where*. The axial model
 adds the spatial dimension that matters most for load following: the 3.66 m core
-height, along which xenon can redistribute and drive slow **axial xenon
-oscillations**.
+height, along which xenon can redistribute and drive slow axial xenon
+oscillations.
 
 ### Method: quasi-static shape + point amplitude
 
@@ -126,9 +126,9 @@ The core is split into $N = 40$ axial nodes. Each node $i$ carries its own fuel 
 coolant temperature and its own I-135, Xe-135, Pm-149 and Sm-149 inventories. Power is
 factorized as $P_i(t) = n(t)\,\psi_i(t)$:
 
-- **Amplitude $n(t)$:** the existing point-kinetics model, with its 6 delayed groups
+- Amplitude $n(t)$: the existing point-kinetics model, with its 6 delayed groups
   and dynamic thermal feedback on 0.25 s steps.
-- **Shape $\psi_i$:** recomputed every coupling interval (5 s) from a one-group 1-D
+- Shape $\psi_i$: recomputed every coupling interval (5 s) from a one-group 1-D
   diffusion eigenvalue problem, with all slow axial physics folded into the local
   reactivity.
 
@@ -136,11 +136,11 @@ $$-M^2\frac{d^2\phi}{dz^2} + \phi = \frac{1}{k}\,\frac{k_{\infty,0}}{1 - \rho_i}
 
 $$\rho_i = b + \tau\left(\tfrac{z_i}{H} - \tfrac12\right) - W\,c_i + \alpha_B B + \alpha_f (T_{f,i} - T_{f,0}) + \alpha_m (T_{c,i} - T_{c,0}) - w_X X_i - w_{Sm} S_{m,i}$$
 
-- $c_i$ is the fraction of node $i$ covered by the rod bank, which enters **from the
-  top**. With a uniform absorber per covered node, the S-shaped integral rod worth
+- $c_i$ is the fraction of node $i$ covered by the rod bank, which enters from the
+  top. With a uniform absorber per covered node, the S-shaped integral rod worth
   curve is no longer an input. It emerges from the flux shape: small at both ends,
   steepest mid-core, totalling $W$.
-- **Coolant heats as it flows up.** The inlet of each node is the outlet of the node
+- Coolant heats as it flows up. The inlet of each node is the outlet of the node
   below, so the moderator is coldest at the bottom. Local temperatures are the point
   model's *current, lagged* core-average temperatures distributed by the flux shape:
   the coolant rise uses the thermal power $n_c = (T_c - T_{in})/(T_{c,0} - T_{in})$
@@ -152,7 +152,7 @@ $$\rho_i = b + \tau\left(\tfrac{z_i}{H} - \tfrac12\right) - W\,c_i + \alpha_B B 
   (I, Pm) and the trapezoidal rule (Xe, Sm).
 - $k_{\infty,0}$ is set so that $\rho_i \equiv 0$ gives $k = 1$. For a uniform $\rho$
   the global reactivity is exactly $\rho$ (tested).
-- **Burnup tilt $\tau$.** Fresh, uniform fuel would put the power strongly at the
+- Burnup tilt $\tau$. Fresh, uniform fuel would put the power strongly at the
   bottom, because the coolant is coldest there. Real cores are flattened by their
   burnup distribution. A linear reactivity tilt $\tau$ stands in for that. It is
   calibrated once per episode so that the full-power equilibrium axial offset equals a
@@ -168,7 +168,7 @@ model's reactivity through a correction to its bias,
 $\Delta\rho = \rho_{eig} - \rho_{point}$. Two design decisions make this coupling
 stable and accurate. Both were found by testing, not assumed.
 
-1. **Live rod worth.** Inside an interval the rods keep moving, at up to a third of
+1. Live rod worth. Inside an interval the rods keep moving, at up to a third of
    the stroke per minute. Their real worth depends on the flux shape: with power
    piled at the top, the top of the stroke is worth far more than the textbook
    S-curve says. At the start of every control step the axial core therefore computes
@@ -177,7 +177,7 @@ stable and accurate. Both were found by testing, not assumed.
    step. Without it, the correction absorbed rod-worth errors of up to 600 pcm as
    step-wise reactivity jumps, which drove a classical controller into a limit cycle
    and a spurious trip.
-2. **Lagged local temperatures.** An earlier version made local temperatures follow
+2. Lagged local temperatures. An earlier version made local temperatures follow
    local power instantly. That injects instantaneous power feedback, through the
    correction, into neutron kinetics that respond in milliseconds. Applied with a
    sampling delay, such a loop is unstable: an undisturbed reactor diverged at
@@ -191,7 +191,7 @@ coefficients. It converges whenever $0 < a/b < 2$. Measured ratios are 1.22 / 1.
 1.20 (BOC / MOC / EOC). The axial coefficient is larger because flux-squared weighting
 emphasizes the hot, peaked mid-core.
 
-**Convergence.** Replaying the same full-day action sequences with coupling intervals
+Convergence. Replaying the same full-day action sequences with coupling intervals
 of 60, 20, 10 and 5 s against a 2.5 s reference shows first-order convergence: the
 error halves with the interval. At 5 s the worst deviation over the most violent
 scenario (`fast_ramp`) is about 1% of rated power and 0.3% in axial offset. At 60 s
@@ -247,6 +247,69 @@ target (constant axial offset control). The axial environment adds an `axial_off
 violation when $|\Delta I - \Delta I_{target}|$ exceeds 5% of rated power, with
 $\Delta I_{target} = \text{AO}_{design} \times P$.
 
+## Steam generators and turbine (`secondary=True`)
+
+With the secondary side enabled, grid demand no longer goes to the reactor. It goes
+to the turbine, as in a real plant. The reactor follows through moderator-temperature
+feedback, and the controller's job becomes holding the average coolant temperature on
+its program and the steam pressure inside its limits.
+
+### Loop equations
+
+Four states are added: hot leg $T_h$, steam-generator primary side $T_p$, cold leg
+$T_{cl}$ and secondary saturation temperature $T_s$. The core inlet is now the cold
+leg, and the core outlet is $2T_c - T_{cl}$.
+
+$$\tau_h\frac{dT_h}{dt} = 2T_c - T_{cl} - T_h
+\qquad
+\tau_{cl}\frac{dT_{cl}}{dt} = T_p - T_{cl}$$
+
+$$C_p\frac{dT_p}{dt} = \dot m c_p\,(T_h - T_p) - UA\,(T_p - T_s)$$
+
+$$C_s\frac{dT_s}{dt} = UA\,(T_p - T_s) - P_0\,\min\!\left(L,\; v_{max}\frac{p_{sat}(T_s)}{p_{sat}(T_{s,0})}\right)$$
+
+$L$ is the turbine load demand. The turbine governor opens its valves to draw the
+demanded steam, but only up to $v_{max}$ = 105% of the full-load opening. Steam flow
+through the open valves is proportional to steam pressure. If pressure sags, the
+turbine cannot deliver its load: this is the mechanism behind real "steam-starved"
+load increases. Steam pressure comes from the IAPWS-IF97 region-4 saturation
+equation, which the tests check against the standard's own verification table to
+1e-9.
+
+### T_avg program and sliding steam pressure
+
+At equilibrium, $T_{avg} = T_{in} + 16\,\text{K} \times P$, the same core temperatures
+as the fixed-inlet model, so all point- and axial-task results are unchanged. The cold
+leg then stays at 292 °C at every load, and the steam-generator conductance
+$UA = P_0 / (T_{cl} - T_{s,0})$ is set so that the full-load saturation temperature is
+285 °C. Steam pressure therefore slides from 7.66 MPa at no load to 6.91 MPa at full
+load. These are the typical ~1100 / ~1000 psia of a Westinghouse four-loop plant;
+they come out of the equations, not out of inputs.
+
+### Self-regulation
+
+With rods and boron frozen, a load increase cools the steam generator, then the cold
+leg, then the core. The negative temperature coefficients then raise reactor power
+until it matches the turbine. The new steady state satisfies
+$\alpha_f \Delta T_f + \alpha_m \Delta T_c = 0$, with $\Delta T_f = \Delta T_c + (T_{f,0} - T_{c,0})\Delta P$:
+
+$$\Delta T_c = -\frac{\alpha_f (T_{f,0} - T_{c,0})}{\alpha_f + \alpha_m}\,\Delta P$$
+
+The simulator reproduces this to 1e-4 K (test). For a larger step (90 → 100%) the
+average temperature falls far enough that steam pressure drops to 6.45 MPa, and the
+turbine settles at 98.8%. That shortfall is why plants need $T_{avg}$ control.
+
+### Secondary parameters
+
+| Parameter | Value | Source / rationale |
+|---|---|---|
+| Hot-leg and cold-leg transport times | 2 s, 3 s | Loop piping and plena |
+| Steam-generator primary capacity $C_p$ | 7.0e8 J/K | Primary water in four SGs, about 7 s time constant |
+| Steam-generator secondary capacity $C_s$ | 2.0e9 J/K | Secondary water inventory and metal |
+| Full-load saturation temperature | 285 °C | 6.91 MPa steam pressure |
+| Turbine valve limit $v_{max}$ | 1.05 | 5% margin above full-load opening |
+| Steam pressure limits | 5.5 / 8.0 MPa | Low-pressure margin / relief valve setpoint |
+
 ## Numerical method
 
 The system is stiff: prompt-neutron time constants are milliseconds, while xenon
@@ -288,21 +351,30 @@ with the C++ core, so the agreement between the two is a real check.
 | Axial: coupling holds equilibrium at intervals of 60, 5 and 1 s | Steady to 1e-7 |
 | Axial: coupling converges as the interval shrinks | Error < 2% at 5 s, decreasing |
 | Axial: rod worth table, C++ vs Python | Agreement to 1e-12 |
+| Plant: IAPWS-IF97 saturation pressure, Python and C++ | IF97 verification table, 1e-8 |
+| Plant: steady state on the T_avg program at 50% and 100% power | Exact, held for 30 min |
+| Plant: energy balance core = steam generator = turbine | Exact |
+| Plant: sliding steam pressure, 7.66 MPa no load to 6.91 MPa full load | IF97 |
+| Plant: self-regulation after a load step with rods frozen | Analytic feedback balance, 1e-4 K |
+| Plant: turbine output limited by steam pressure | Valve equation |
+| Plant: C++ matches SciPy Radau over 30 min of random rod, boron and load moves | Difference < 1e-4 |
+| Plant: load rejection without control lifts steam pressure above 8 MPa | Physical behaviour |
 
 ## Known limitations
 
-- **One-group, one-dimensional shape.** No radial dimension, no energy groups, and
+- One-group, one-dimensional shape. No radial dimension, no energy groups, and
   one lumped rod bank. Burnup appears only as a linear axial tilt calibrated to a
   design offset.
-- **Quasi-static shape.** The shape is re-solved every 5 s with first-order coupling
+- Quasi-static shape. The shape is re-solved every 5 s with first-order coupling
   accuracy. That is accurate for xenon- and rod-driven shape changes, but not for
   sub-second spatial transients such as a rod ejection.
-- **No secondary side.** Inlet temperature is fixed. There is no steam generator,
-  turbine or $T_{avg}$ program, so demand is a reactor-power set-point.
-- **Single lumped rod bank.** Real plants move several overlapping banks with
+- Lumped secondary side. One steam generator node stands for four loops, with no
+  level dynamics, no feedwater temperature changes and no pressurizer. The turbine is
+  a valve model, not a stage-by-stage expansion.
+- Single lumped rod bank. Real plants move several overlapping banks with
   step-wise motion and deadbands.
-- **Boron acts instantly in the core.** Mixing and transport delays are ignored.
-- **Representative parameters.** Coefficients describe a generic PWR, not a specific
+- Boron acts instantly in the core. Mixing and transport delays are ignored.
+- Representative parameters. Coefficients describe a generic PWR, not a specific
   core design or burnup state.
 
 ## References
